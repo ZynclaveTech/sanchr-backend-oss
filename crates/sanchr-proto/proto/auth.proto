@@ -1,0 +1,77 @@
+syntax = "proto3";
+package sanchr.auth;
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc VerifyOTP(VerifyOTPRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+}
+
+message DeviceInfo {
+  string device_name = 1;
+  string platform = 2;
+  string installation_id = 3;
+  bool supports_delivery_ack = 4;
+}
+
+message RegisterRequest {
+  string phone_number = 1;
+  string display_name = 2;
+  string password = 3;
+  string email = 4;
+  DeviceInfo device = 5;
+}
+
+message VerifyOTPRequest {
+  string phone_number = 1;
+  string otp_code = 2;
+  DeviceInfo device = 3;
+  string registration_lock_pin = 4;
+}
+
+message LoginRequest {
+  string phone_number = 1;
+  string password = 2;
+  DeviceInfo device = 3;
+  string registration_lock_pin = 4;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message AuthResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  User user = 3;
+  int32 device_id = 4;
+}
+
+message LogoutResponse {}
+
+message DeleteAccountRequest {
+  // Reserved for a future password/OTP confirmation field. Kept empty for
+  // now — authentication is enforced via the Bearer access token.
+  reserved 1;
+}
+
+message DeleteAccountResponse {
+  bool success = 1;
+}
+
+message User {
+  string id = 1;
+  string phone_number = 2;
+  string display_name = 3;
+  string email = 4;
+  string avatar_url = 5;
+  string status_text = 6;
+  string created_at = 7;
+}

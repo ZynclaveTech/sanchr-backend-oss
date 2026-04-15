@@ -1,0 +1,32 @@
+syntax = "proto3";
+package sanchr.discovery;
+
+service DiscoveryService {
+  rpc OprfDiscover(OprfDiscoverRequest) returns (OprfDiscoverResponse);
+  rpc GetBloomFilter(GetBloomFilterRequest) returns (GetBloomFilterResponse);
+  rpc GetRegisteredSet(GetRegisteredSetRequest) returns (GetRegisteredSetResponse);
+}
+
+message OprfDiscoverRequest {
+  repeated bytes blinded_points = 1;
+}
+
+message OprfDiscoverResponse {
+  repeated bytes evaluated_points = 1;
+}
+
+message GetBloomFilterRequest {}
+
+message GetBloomFilterResponse {
+  bytes filter_bits = 1;
+  uint32 num_hashes = 2;
+  uint64 num_bits = 3;
+  bytes daily_salt = 4;
+  int64 generated_at = 5;
+}
+
+message GetRegisteredSetRequest {}
+
+message GetRegisteredSetResponse {
+  repeated bytes set_elements = 1;
+}

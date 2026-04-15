@@ -1,0 +1,82 @@
+syntax = "proto3";
+package sanchr.calling;
+
+service CallSignalingService {
+  rpc InitiateCall(CallOffer) returns (CallResponse);
+  rpc CallStream(stream CallSignal) returns (stream CallSignal);
+  rpc EndCall(EndCallRequest) returns (EndCallResponse);
+  rpc GetCallHistory(GetCallHistoryRequest) returns (GetCallHistoryResponse);
+  rpc GetTurnCredentials(GetTurnCredentialsRequest) returns (TurnCredentials);
+}
+
+message CallOffer {
+  string recipient_id = 1;    // kept for server backward compat; unused when delivery_token is set
+  string call_type = 2;       // "voice" or "video"
+  reserved 3;                 // was sdp_offer — do not reuse
+  reserved "sdp_offer";
+  reserved 4;                 // was srtp_key_params — do not reuse
+  reserved "srtp_key_params";
+  bytes delivery_token = 5;         // sealed sender routing token
+  bytes encrypted_sdp_payload = 6;  // Signal-encrypt(SealedCallPayload JSON)
+}
+
+message CallResponse {
+  string call_id = 1;
+  string status = 2;          // "ringing", "busy", "unavailable"
+}
+
+message CallSignal {
+  string call_id = 1;
+  reserved 2;                       // was sdp_answer — do not reuse
+  reserved "sdp_answer";
+  oneof signal {
+    bytes ice_candidate = 3;          // unchanged
+    CallControl control = 4;          // unchanged
+    bytes encrypted_sdp_answer = 5;   // Signal-encrypt(SealedCallPayload JSON)
+    CallJoin join = 6;                // stream join; consumed by server, not relayed
+  }
+}
+
+message CallJoin {
+  string role = 1;             // "caller" or "callee"
+}
+
+message CallControl {
+  string action = 1;           // "ringing", "accepted", "declined", "busy", "ended", "missed"
+}
+
+message EndCallRequest {
+  string call_id = 1;
+  string reason = 2;           // "ended", "declined", "cancelled", "busy", "missed", "failed"
+}
+
+message EndCallResponse {}
+
+message GetCallHistoryRequest {
+  int32 limit = 1;
+}
+
+message GetCallHistoryResponse {
+  repeated CallLogEntry entries = 1;
+}
+
+message CallLogEntry {
+  string call_id = 1;
+  string peer_id = 2;
+  string peer_name = 3;
+  string call_type = 4;       // "voice" or "video"
+  string direction = 5;       // "incoming" or "outgoing"
+  string status = 6;          // "completed", "missed", "declined", "busy"
+  int64 started_at = 7;
+  int64 ended_at = 8;
+  int32 duration_secs = 9;
+}
+
+message GetTurnCredentialsRequest {}
+
+message TurnCredentials {
+  repeated string urls = 1;
+  string username = 2;
+  string credential = 3;
+  int64 ttl = 4;
+}

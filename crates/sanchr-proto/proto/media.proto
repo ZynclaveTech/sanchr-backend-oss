@@ -1,0 +1,40 @@
+syntax = "proto3";
+package sanchr.media;
+
+service MediaService {
+  rpc GetUploadUrl(GetUploadUrlRequest) returns (PresignedUrlResponse);
+  rpc GetDownloadUrl(GetDownloadUrlRequest) returns (PresignedUrlResponse);
+  rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
+}
+
+enum MediaPurpose {
+  MEDIA_PURPOSE_ATTACHMENT = 0; // E2EE message attachment (private, presigned access)
+  MEDIA_PURPOSE_AVATAR = 1;     // Profile avatar (public-read via CDN)
+}
+
+message GetUploadUrlRequest {
+  int64 file_size = 1;
+  string content_type = 2;    // MIME type: "image/jpeg", "video/mp4", etc.
+  string sha256_hash = 3;     // hash of encrypted blob for dedup
+  MediaPurpose purpose = 4;   // controls ACL and storage path
+}
+
+message GetDownloadUrlRequest {
+  string media_id = 1;
+}
+
+message PresignedUrlResponse {
+  string url = 1;             // presigned PUT/GET URL (for upload/download)
+  string media_id = 2;
+  int64 expires_in = 3;       // seconds until URL expires
+  string display_url = 4;     // permanent CDN URL for display (empty if no CDN configured)
+}
+
+message ConfirmUploadRequest {
+  string media_id = 1;
+  int64 file_size = 2;
+}
+
+message ConfirmUploadResponse {
+  string media_id = 1;
+}

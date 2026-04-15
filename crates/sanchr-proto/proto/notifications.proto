@@ -1,0 +1,34 @@
+syntax = "proto3";
+package sanchr.notifications;
+
+service NotificationService {
+  rpc RegisterPushToken(RegisterPushTokenRequest) returns (RegisterPushTokenResponse);
+  rpc UpdateNotificationPrefs(UpdateNotificationPrefsRequest) returns (UpdateNotificationPrefsResponse);
+  rpc SetConversationNotificationPrefs(SetConversationNotificationPrefsRequest) returns (SetConversationNotificationPrefsResponse);
+}
+
+message RegisterPushTokenRequest {
+  string token = 1;
+  string platform = 2;        // "ios" or "android"
+  string voip_token = 3;      // VoIP PushKit token (iOS only; empty on other platforms)
+}
+
+message RegisterPushTokenResponse {}
+
+message UpdateNotificationPrefsRequest {
+  bool message_notifications = 1;
+  bool group_notifications = 2;
+  bool call_notifications = 3;
+  string notification_sound = 4;
+  bool vibrate = 5;
+  bool show_preview = 6;
+}
+
+message UpdateNotificationPrefsResponse {}
+
+message SetConversationNotificationPrefsRequest {
+  string conversation_id = 1;
+  bool muted = 2;
+}
+
+message SetConversationNotificationPrefsResponse {}

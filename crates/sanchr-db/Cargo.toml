@@ -1,0 +1,27 @@
+[package]
+name = "sanchr-db"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sanchr-common = { path = "../sanchr-common" }
+sqlx = { workspace = true }
+fred = { workspace = true }
+bytes = { workspace = true }
+scylla = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

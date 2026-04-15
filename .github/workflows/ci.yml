@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint_and_unit:
+    name: Lint & Unit
+    uses: ./.github/workflows/rust-lint-unit-reusable.yml
+
+  reliability_guards:
+    name: Reliability Guards
+    needs: lint_and_unit
+    uses: ./.github/workflows/rust-integration-reusable.yml
+    with:
+      test_command: make reliability-guards
+
+  integration:
+    name: Integration Tests
+    needs: lint_and_unit
+    uses: ./.github/workflows/rust-integration-reusable.yml
+    with:
+      test_command: cargo test --workspace --tests

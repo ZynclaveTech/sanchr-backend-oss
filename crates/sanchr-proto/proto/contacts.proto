@@ -1,0 +1,70 @@
+syntax = "proto3";
+package sanchr.contacts;
+
+service ContactService {
+  rpc SyncContacts(SyncContactsRequest) returns (SyncContactsResponse);
+  rpc GetContacts(GetContactsRequest) returns (GetContactsResponse);
+  rpc BlockContact(BlockContactRequest) returns (BlockContactResponse);
+  rpc UnblockContact(UnblockContactRequest) returns (UnblockContactResponse);
+  rpc GetBlockedList(GetBlockedListRequest) returns (GetBlockedListResponse);
+}
+
+message SyncContactsRequest {
+  repeated bytes phone_hashes = 1;
+}
+
+message SyncContactsResponse {
+  repeated MatchedContact matches = 1;
+}
+
+message MatchedContact {
+  string user_id      = 1;
+  string display_name = 2;
+  string avatar_url   = 3;
+  string status_text  = 4;
+  string phone_number = 5;
+  // Encrypted profile fields
+  bytes profile_key             = 6;
+  bytes encrypted_display_name  = 7;
+  bytes encrypted_bio           = 8;
+  bytes encrypted_avatar_url    = 9;
+}
+
+message GetContactsRequest {}
+
+message GetContactsResponse {
+  repeated Contact contacts = 1;
+}
+
+message Contact {
+  string user_id      = 1;
+  string display_name = 2;
+  string avatar_url   = 3;
+  string status_text  = 4;
+  bool   is_blocked   = 5;
+  bool   is_favorite  = 6;
+  string phone_number = 7;
+  // Encrypted profile fields
+  bytes profile_key             = 8;
+  bytes encrypted_display_name  = 9;
+  bytes encrypted_bio           = 10;
+  bytes encrypted_avatar_url    = 11;
+}
+
+message BlockContactRequest {
+  string contact_user_id = 1;
+}
+
+message BlockContactResponse {}
+
+message UnblockContactRequest {
+  string contact_user_id = 1;
+}
+
+message UnblockContactResponse {}
+
+message GetBlockedListRequest {}
+
+message GetBlockedListResponse {
+  repeated string blocked_user_ids = 1;
+}

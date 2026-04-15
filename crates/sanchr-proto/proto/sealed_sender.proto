@@ -1,0 +1,23 @@
+syntax = "proto3";
+package sanchr.sealed_sender;
+
+message ServerCertificate {
+  message Certificate {
+    uint32 id = 1;
+    bytes key = 2;
+  }
+  bytes certificate = 1;
+  bytes signature = 2;
+}
+
+message SenderCertificate {
+  message Certificate {
+    string sender_uuid = 1;
+    uint32 sender_device_id = 3;
+    fixed64 expires = 4;
+    bytes identity_key = 5;
+    ServerCertificate signer = 6;
+  }
+  bytes certificate = 1;
+  bytes signature = 2;
+}

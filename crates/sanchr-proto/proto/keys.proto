@@ -1,0 +1,89 @@
+syntax = "proto3";
+package sanchr.keys;
+
+service KeyService {
+  rpc UploadKeyBundle(KeyBundle) returns (UploadKeyBundleResponse);
+  rpc GetPreKeyBundle(GetPreKeyBundleRequest) returns (PreKeyBundleResponse);
+  rpc UploadOneTimePreKeys(UploadOneTimePreKeysRequest) returns (PreKeyCountResponse);
+  rpc GetPreKeyCount(GetPreKeyCountRequest) returns (PreKeyCountResponse);
+  rpc GetUserDevices(GetUserDevicesRequest) returns (GetUserDevicesResponse);
+  rpc RemoveDevice(RemoveDeviceRequest) returns (RemoveDeviceResponse);
+}
+
+message SignedPreKey {
+  int32 key_id = 1;
+  bytes public_key = 2;
+  bytes signature = 3;
+  int64 timestamp = 4;
+}
+
+message OneTimePreKey {
+  int32 key_id = 1;
+  bytes public_key = 2;
+}
+
+message KyberPreKey {
+  int32 key_id = 1;
+  bytes public_key = 2;
+  bytes signature = 3;
+  int64 timestamp = 4;
+}
+
+message KeyBundle {
+  bytes identity_public_key = 1;
+  SignedPreKey signed_pre_key = 2;
+  repeated OneTimePreKey one_time_pre_keys = 3;
+  int32 registration_id = 4;
+  int32 device_id = 5;
+  KyberPreKey kyber_pre_key = 6;
+}
+
+message UploadKeyBundleResponse {}
+
+message GetPreKeyBundleRequest {
+  string user_id = 1;
+  int32 device_id = 2;
+}
+
+message PreKeyBundleResponse {
+  bytes identity_public_key = 1;
+  SignedPreKey signed_pre_key = 2;
+  OneTimePreKey one_time_pre_key = 3;
+  int32 device_id = 4;
+  int32 registration_id = 5;
+  KyberPreKey kyber_pre_key = 6;
+}
+
+message UploadOneTimePreKeysRequest {
+  repeated OneTimePreKey keys = 1;
+}
+
+message PreKeyCountResponse {
+  int32 count = 1;
+}
+
+message GetPreKeyCountRequest {}
+
+message GetUserDevicesRequest {
+  string user_id = 1;
+}
+
+message GetUserDevicesResponse {
+  repeated DeviceInfo devices = 1;
+}
+
+message DeviceInfo {
+  int32 device_id = 1;
+  string platform = 2;
+  bool supports_delivery_ack = 3;
+  bool key_capable = 4;
+  int64 last_active_at = 5;
+}
+
+message RemoveDeviceRequest {
+  int32 device_id = 1;
+}
+
+message RemoveDeviceResponse {
+  bool success = 1;
+}

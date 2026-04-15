@@ -1,0 +1,91 @@
+syntax = "proto3";
+package sanchr.settings;
+
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (UserSettings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UserSettings);
+  rpc UpdateProfile(UpdateProfileRequest) returns (ProfileResponse);
+  rpc ToggleSanchrMode(ToggleSanchrModeRequest) returns (UserSettings);
+  rpc GetStorageUsage(GetStorageUsageRequest) returns (StorageUsageResponse);
+  rpc SetRegistrationLock(SetRegistrationLockRequest) returns (SetRegistrationLockResponse);
+}
+
+message GetSettingsRequest {}
+
+message UserSettings {
+  bool read_receipts = 1;
+  bool online_status_visible = 2;
+  bool typing_indicator = 3;
+  string profile_photo_visibility = 4;
+  bool sanchr_mode_enabled = 5;
+  bool screen_lock_enabled = 6;
+  int32 screen_lock_timeout = 7;
+  bool screenshot_protection = 8;
+  bool biometric_lock = 9;
+  bool message_notifications = 10;
+  bool group_notifications = 11;
+  bool call_notifications = 12;
+  string notification_sound = 13;
+  bool notification_vibrate = 14;
+  bool show_preview = 15;
+  string theme = 16;
+  string font_size = 17;
+  string chat_wallpaper = 18;
+  string auto_download_wifi = 19;
+  string auto_download_mobile = 20;
+  string auto_download_roaming = 21;
+  bool low_data_mode = 22;
+  bool registration_lock_enabled = 23;
+}
+
+message UpdateSettingsRequest {
+  UserSettings settings = 1;
+}
+
+message UpdateProfileRequest {
+  string display_name = 1;
+  string avatar_url   = 2;
+  string status_text  = 3;
+  // Encrypted profile fields (AES-256-GCM). Server stores as opaque blobs.
+  bytes profile_key             = 4;
+  bytes encrypted_display_name  = 5;
+  bytes encrypted_bio           = 6;
+  bytes encrypted_avatar_url    = 7;
+}
+
+message ProfileResponse {
+  string id           = 1;
+  string display_name = 2;
+  string avatar_url   = 3;
+  string status_text  = 4;
+  // Server echoes back the persisted encrypted fields.
+  bytes profile_key             = 5;
+  bytes encrypted_display_name  = 6;
+  bytes encrypted_bio           = 7;
+  bytes encrypted_avatar_url    = 8;
+}
+
+message ToggleSanchrModeRequest {
+  bool enabled = 1;
+}
+
+message SetRegistrationLockRequest {
+  bool enabled = 1;
+  string pin = 2;
+}
+
+message SetRegistrationLockResponse {
+  bool success = 1;
+}
+
+message GetStorageUsageRequest {}
+
+message StorageUsageResponse {
+  int64 photos_bytes = 1;
+  int64 videos_bytes = 2;
+  int64 documents_bytes = 3;
+  int64 voice_bytes = 4;
+  int64 other_bytes = 5;
+  int64 total_bytes = 6;
+  int64 limit_bytes = 7;
+}

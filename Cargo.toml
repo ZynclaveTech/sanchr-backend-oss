@@ -1,0 +1,105 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sanchr-common",
+    "crates/sanchr-proto",
+    "crates/sanchr-server-crypto",
+    "crates/sanchr-db",
+    "crates/sanchr-core",
+    "crates/sanchr-call",
+    "crates/sanchr-psi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+[workspace.dependencies]
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Web/gRPC
+axum = { version = "0.7", features = ["macros"] }
+tonic = { version = "0.12", features = ["gzip", "tls"] }
+prost = "0.13"
+prost-types = "0.13"
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+hyper = { version = "1" }
+hyper-util = { version = "0.1" }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "migrate"] }
+fred = { version = "9", features = ["enable-rustls", "i-scripts"] }
+bytes = "1"
+rustls = { version = "0.23", features = ["ring"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# OPRF / PSI
+curve25519-dalek = { version = "4", features = ["serde", "rand_core", "digest"] }
+hkdf = "0.12"
+
+# Push notifications
+a2 = "0.10"
+
+# Crypto
+argon2 = "0.5"
+ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
+jsonwebtoken = "9"
+rand = "0.8"
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+hex = "0.4"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.31"
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+tracing-opentelemetry = "0.32"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.18"
+
+# Config
+config = "0.14"
+
+# Types
+uuid = { version = "1", features = ["v1", "v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+
+# ScyllaDB + NATS
+scylla = { version = "0.14", features = ["ssl"] }
+async-nats = "0.38"
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# AWS / S3
+aws-sdk-s3 = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-credential-types = "1"
+
+# Concurrency
+arc-swap = "1"
+
+# Testing
+tokio-test = "0.4"

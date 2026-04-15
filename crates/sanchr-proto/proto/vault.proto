@@ -1,0 +1,88 @@
+syntax = "proto3";
+package sanchr.vault;
+
+// Forward-secure vault, compliant with the research paper "Threat-Driven
+// Extensions to the Signal Protocol" — Defense 2.
+//
+// Contract:
+//   - The server NEVER sees a plaintext AES key for a vault item.
+//   - Metadata (file name, mime type, thumbnail, etc.) is encrypted client-side
+//     and passed to the server as an opaque `encrypted_metadata` blob.
+//   - Vault item IDs are client-generated UUIDv4 for idempotent crash recovery.
+//   - Sharing is intentionally absent. It will return in a future round with
+//     a proper cryptographic re-wrap design.
+service VaultService {
+  rpc CreateVaultItem(CreateVaultItemRequest) returns (VaultItem);
+  rpc GetVaultItems(GetVaultItemsRequest) returns (GetVaultItemsResponse);
+  rpc GetVaultItem(GetVaultItemRequest) returns (VaultItem);
+  rpc DeleteVaultItem(DeleteVaultItemRequest) returns (DeleteVaultItemResponse);
+}
+
+message CreateVaultItemRequest {
+  reserved 5, 6, 7, 8;
+  reserved "media_type", "encrypted_url", "encrypted_key", "thumbnail_url",
+           "file_name", "file_size", "sender_id", "ttl_seconds";
+
+  // Client-generated UUIDv4 for idempotent crash recovery. Server uses this as the primary key; retries with the same ID are a no-op that return the existing row.
+  string vault_item_id = 1;
+
+  // UUID of an already-uploaded media_object (via MediaService.GetUploadUrl + ConfirmUpload). The caller MUST own this media_id or the request is rejected.
+  string media_id = 2;
+
+  // Opaque AES-GCM ciphertext of the metadata envelope, keyed client-side
+  // with AccessK_vault. Contains name, mime type, size, thumbnail, sender
+  // id, etc. Server treats this as an opaque byte string. Max 64 KiB;
+  // exceeding this returns INVALID_ARGUMENT.
+  bytes encrypted_metadata = 3;
+
+  // Client-computed expiry hint (Unix millis). Used by the server-side orphan sweep for lifecycle management. Not cryptographically enforced.
+  int64 expires_at = 4;
+}
+
+message VaultItem {
+  reserved 6, 7, 8, 9, 10;
+  reserved "item_id", "media_type", "encrypted_url", "encrypted_key",
+           "thumbnail_url", "file_name", "file_size", "sender_id";
+
+  string vault_item_id = 1;
+  string media_id = 2;
+  bytes encrypted_metadata = 3;
+  int64 created_at = 4;  // Server-stamped Unix millis.
+  int64 expires_at = 5;  // Unix millis. Echoes the value from CreateVaultItemRequest.expires_at.
+}
+
+message GetVaultItemsRequest {
+  reserved 3;
+  reserved "filter", "before_item_id";
+
+  // Page size, 1..=100. Zero or negative values default to 20.
+  int32 limit = 1;
+
+  // Opaque paging cursor from a previous response's `next_cursor`.
+  string paging_token = 2;
+}
+
+message GetVaultItemsResponse {
+  // Tag 2 in the old proto was `int32 total_photos` — it is now reused for
+  // a `string next_cursor` with a different wire type. We cannot retroactively
+  // reserve tag 2 here because it is now live with different semantics; the
+  // wire-break is accepted under the "no production users" plan. Tags 3 and 4
+  // held `total_videos` and `total_files`, which are dropped entirely and ARE
+  // reserved so a future field cannot accidentally reuse them.
+  reserved 3, 4;
+  reserved "total_photos", "total_videos", "total_files";
+
+  repeated VaultItem items = 1;
+  // Empty string when no more pages. Forward this value as the next request's paging_token.
+  string next_cursor = 2;
+}
+
+message GetVaultItemRequest {
+  string vault_item_id = 1;
+}
+
+message DeleteVaultItemRequest {
+  string vault_item_id = 1;
+}
+
+message DeleteVaultItemResponse {}
