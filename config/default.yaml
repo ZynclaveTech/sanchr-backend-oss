@@ -48,7 +48,8 @@ storage:
   region: "us-east-1"
   access_key: "minioadmin"
   secret_key: "minioadmin"
-  presigned_url_ttl: 2592000
+  # AWS S3 SDK enforces a max of 7 days (604800 seconds) for presigned URLs.
+  presigned_url_ttl: 604800
 
 push:
   fcm_key: "CHANGE_ME"

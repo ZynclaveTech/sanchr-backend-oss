@@ -4,7 +4,8 @@ use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Paper Section 5.2.1 bounds typing/read state to 5 minutes.
-const RECEIPT_TTL_SECS: i64 = 300;
+/// CQL `USING TTL` is an INT (i32), not BIGINT.
+const RECEIPT_TTL_SECS: i32 = 300;
 
 /// Row returned from the `message_receipts` table.
 #[derive(Debug, Clone, DeserializeRow)]

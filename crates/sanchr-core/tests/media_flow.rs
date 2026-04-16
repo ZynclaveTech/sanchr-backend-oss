@@ -110,16 +110,46 @@ async fn get_download_url_allows_capability_style_access_for_confirmed_media_id(
     let attacker = attacker_auth.user.id;
 
     // Owner uploads a real media object via the normal upload path.
+    let body = b"attachment-bytes-for-enum-test".to_vec();
     let upload = sanchr_core::media::handlers::handle_get_upload_url(
         &state,
         owner,
-        1024,
+        body.len() as i64,
         "application/octet-stream",
         &format!("sha256-enum-test-{}", Uuid::new_v4()),
         MediaPurpose::Attachment,
     )
     .await
     .expect("get_upload_url");
+
+    // Put the bytes into S3 so confirm_upload's existence check succeeds.
+    let media_uuid = Uuid::parse_str(&upload.media_id).expect("valid media_id");
+    let media_meta = pg_media::get_media_object(&state.pg_pool, owner, media_uuid)
+        .await
+        .expect("load media metadata")
+        .expect("media metadata exists");
+    state
+        .s3
+        .put_object()
+        .bucket(&state.config.storage.bucket)
+        .key(&media_meta.storage_key)
+        .content_type("application/octet-stream")
+        .body(ByteStream::from(body.clone()))
+        .send()
+        .await
+        .expect("put object");
+
+    // Owner confirms the upload — capability-style download is only granted
+    // for confirmed media_ids to avoid leaking presigned URLs for phantom
+    // objects.
+    sanchr_core::media::handlers::handle_confirm_upload(
+        &state,
+        owner,
+        &upload.media_id,
+        body.len() as i64,
+    )
+    .await
+    .expect("confirm upload");
 
     // Any authenticated caller possessing a confirmed media_id can fetch the
     // presigned URL. The media_id is treated as a bearer capability.

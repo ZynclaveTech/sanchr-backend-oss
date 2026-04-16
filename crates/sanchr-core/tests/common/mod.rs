@@ -10,6 +10,16 @@ use sanchr_server_crypto::jwt::JwtManager;
 /// Setup shared state for integration tests.
 /// Requires docker-compose services running (Postgres, Redis, ScyllaDB, NATS, MinIO).
 pub async fn setup_test_state() -> Arc<sanchr_core::server::AppState> {
+    // Initialize tracing so server-side errors surface in test output.
+    // `try_init` is safe to call multiple times across test binaries.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("error")),
+        )
+        .with_test_writer()
+        .try_init();
+
     // Cargo sets CARGO_MANIFEST_DIR to the crate root during tests. Change to
     // the workspace root so AppConfig::load() can pick up optional config/*
     // files or SANCHR__ env overrides from the repository root.
@@ -39,9 +49,24 @@ pub async fn setup_test_state() -> Arc<sanchr_core::server::AppState> {
         .await
         .expect("failed to create scylla session");
 
-    let nats_client = async_nats::connect(&config.database.nats.url)
-        .await
-        .expect("failed to connect to NATS");
+    let nats_client = {
+        let nats_cfg = &config.database.nats;
+        let nats_user = nats_cfg.username.as_deref().filter(|s| !s.is_empty());
+        let nats_pass = nats_cfg.password.as_deref().filter(|s| !s.is_empty());
+        match (nats_user, nats_pass) {
+            (Some(user), Some(pass)) => async_nats::ConnectOptions::with_user_and_password(
+                user.to_string(),
+                pass.to_string(),
+            )
+            .connect(&nats_cfg.url)
+            .await
+            .expect("failed to connect to NATS"),
+            _ => async_nats::ConnectOptions::new()
+                .connect(&nats_cfg.url)
+                .await
+                .expect("failed to connect to NATS"),
+        }
+    };
 
     // S3 client (MinIO)
     let s3_creds = aws_credential_types::Credentials::new(
