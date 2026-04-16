@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use scylla::frame::value::CqlTimeuuid;
+use scylla::value::CqlTimeuuid;
 use tonic::Status;
 use uuid::Uuid;
 

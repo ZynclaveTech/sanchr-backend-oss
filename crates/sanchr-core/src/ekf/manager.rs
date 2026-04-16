@@ -5,7 +5,7 @@ use chrono::Utc;
 use tokio::time::{interval, MissedTickBehavior};
 use tracing::{error, info, warn};
 
-use rand::RngCore;
+use rand::Rng;
 
 use super::models::{ExpPolicy, KeyClass, NULL_SENTINEL};
 use crate::server::AppState;
@@ -204,7 +204,7 @@ pub async fn lifecycle_tick(state: &Arc<AppState>) -> Result<(), Box<dyn std::er
                     // always has a non-zero supply without a client round-trip.
                     let material_len = row.material.len().max(32);
                     let mut new_material = vec![0u8; material_len];
-                    rand::thread_rng().fill_bytes(&mut new_material);
+                    rand::rng().fill_bytes(&mut new_material);
 
                     if let Err(e) = auxiliary::overwrite_entry(
                         &state.scylla,

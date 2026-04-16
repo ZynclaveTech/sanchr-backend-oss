@@ -1,7 +1,7 @@
-use fred::clients::RedisClient;
+use fred::clients::Client;
 use fred::interfaces::KeysInterface;
 use fred::types::Expiration;
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -31,11 +31,11 @@ pub trait ChallengeProvider: Send + Sync {
 pub struct PowChallengeProvider {
     difficulty: u32,
     ttl_secs: u64,
-    redis: RedisClient,
+    redis: Client,
 }
 
 impl PowChallengeProvider {
-    pub fn new(difficulty: u32, ttl_secs: u64, redis: RedisClient) -> Self {
+    pub fn new(difficulty: u32, ttl_secs: u64, redis: Client) -> Self {
         Self {
             difficulty,
             ttl_secs,
@@ -72,14 +72,14 @@ impl ChallengeProvider for PowChallengeProvider {
 
         // Generate a random 16-byte hex prefix.
         let mut prefix_bytes = [0u8; 16];
-        rand::thread_rng().fill_bytes(&mut prefix_bytes);
+        rand::rng().fill_bytes(&mut prefix_bytes);
         let prefix = hex::encode(prefix_bytes);
 
         let redis_key = format!("challenge:{}", challenge_id);
         let redis_value = format!("{}:{}", prefix, self.difficulty);
 
         self.redis
-            .set::<(), _, _>(
+            .set::<(), &str, String>(
                 &redis_key,
                 redis_value,
                 Some(Expiration::EX(self.ttl_secs as i64)),
@@ -109,7 +109,7 @@ impl ChallengeProvider for PowChallengeProvider {
 
         let stored: Option<String> = self
             .redis
-            .get(&redis_key)
+            .get::<Option<String>, _>(&redis_key)
             .await
             .map_err(|e| AppError::Internal(format!("redis get challenge: {e}")))?;
 
@@ -118,7 +118,7 @@ impl ChallengeProvider for PowChallengeProvider {
 
         // Delete immediately to enforce one-shot usage.
         self.redis
-            .del::<(), _>(&redis_key)
+            .del::<(), &str>(&redis_key)
             .await
             .map_err(|e| AppError::Internal(format!("redis del challenge: {e}")))?;
 

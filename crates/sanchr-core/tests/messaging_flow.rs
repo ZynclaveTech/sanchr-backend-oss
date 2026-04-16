@@ -672,7 +672,7 @@ async fn delete_message_hard_deletes_for_sender_only() {
     let deleted = sc_messages::get_message(
         &state.scylla,
         conv_id,
-        scylla::frame::value::CqlTimeuuid::from(msg.message_id.parse::<Uuid>().unwrap()),
+        scylla::value::CqlTimeuuid::from(msg.message_id.parse::<Uuid>().unwrap()),
     )
     .await
     .expect("scylla get should succeed");

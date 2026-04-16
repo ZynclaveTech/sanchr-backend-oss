@@ -1,5 +1,5 @@
-use fred::clients::RedisClient;
-use fred::error::RedisError;
+use fred::clients::Client;
+use fred::error::Error;
 use fred::interfaces::{KeysInterface, SetsInterface};
 use fred::types::Expiration;
 use uuid::Uuid;
@@ -25,12 +25,12 @@ fn session_member(jti: &str) -> String {
 ///
 /// Refresh tokens are stored exclusively in Postgres (`refresh_tokens` table).
 pub async fn create_session(
-    client: &RedisClient,
+    client: &Client,
     access_token_jti: &str,
     user_id: &Uuid,
     device_id: i32,
     access_ttl: i64,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let value = format!("{}:{}", user_id, device_id);
 
     let session_key = format!("session:{}", access_token_jti);
@@ -50,7 +50,7 @@ pub async fn create_session(
     client
         .sadd::<(), _, _>(&user_key, session_member(access_token_jti))
         .await?;
-    client.expire::<(), _>(&user_key, access_ttl).await?;
+    client.expire::<(), _>(&user_key, access_ttl, None).await?;
 
     Ok(())
 }
@@ -58,10 +58,7 @@ pub async fn create_session(
 /// Revoke every active session for a user. Best-effort: any stale members in
 /// the index are still issued a DEL (which is a no-op on missing keys), and
 /// the index itself is removed at the end.
-pub async fn revoke_all_sessions_for_user(
-    client: &RedisClient,
-    user_id: &Uuid,
-) -> Result<(), RedisError> {
+pub async fn revoke_all_sessions_for_user(client: &Client, user_id: &Uuid) -> Result<(), Error> {
     let user_key = user_sessions_key(user_id);
     let members: Vec<String> = client.smembers(&user_key).await?;
 
@@ -82,17 +79,14 @@ fn parse_session_value(raw: &str) -> Option<(Uuid, i32)> {
 }
 
 /// Validate an access token by its JTI. Returns `(user_id, device_id)` if found.
-pub async fn validate_session(
-    client: &RedisClient,
-    jti: &str,
-) -> Result<Option<(Uuid, i32)>, RedisError> {
+pub async fn validate_session(client: &Client, jti: &str) -> Result<Option<(Uuid, i32)>, Error> {
     let key = format!("session:{}", jti);
     let raw: Option<String> = client.get(&key).await?;
     Ok(raw.as_deref().and_then(parse_session_value))
 }
 
 /// Delete an access-token session by JTI.
-pub async fn revoke_session(client: &RedisClient, jti: &str) -> Result<(), RedisError> {
+pub async fn revoke_session(client: &Client, jti: &str) -> Result<(), Error> {
     let key = format!("session:{}", jti);
     client.del::<(), _>(&key).await?;
     Ok(())

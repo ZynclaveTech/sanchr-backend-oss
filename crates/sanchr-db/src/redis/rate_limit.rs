@@ -1,4 +1,4 @@
-use fred::clients::RedisClient;
+use fred::clients::Client;
 use fred::interfaces::LuaInterface;
 use sanchr_common::errors::AppError;
 
@@ -17,7 +17,7 @@ return current
 /// Increments the counter for `key` and sets TTL atomically on first request.
 /// Returns the remaining allowed requests, or `AppError::RateLimited`.
 pub async fn check_rate_limit(
-    client: &RedisClient,
+    client: &Client,
     key: &str,
     max_requests: u64,
     window_seconds: i64,

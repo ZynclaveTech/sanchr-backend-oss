@@ -1,7 +1,7 @@
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::statement::{PagingState, PagingStateResponse};
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::response::{PagingState, PagingStateResponse};
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 use super::SYNC_PAGE_SIZE;
@@ -17,7 +17,7 @@ pub struct SealedOutboxRow {
     pub server_ts: i64,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct DeviceOutboxRow {
     pub recipient_id: Uuid,
     pub recipient_device: i32,
@@ -109,10 +109,11 @@ pub async fn get_outbox_messages(
              WHERE recipient_id = ? AND recipient_device = ?",
             (recipient_id, device_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<DeviceOutboxRow>()?
+        .rows::<DeviceOutboxRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)
@@ -139,8 +140,9 @@ pub async fn get_outbox_messages_page(
         .execute_single_page(&prepared, (recipient_id, device_id), paging_state)
         .await?;
 
+    let result = result.into_rows_result()?;
     let rows = result
-        .rows_typed::<DeviceOutboxRow>()?
+        .rows::<DeviceOutboxRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok((rows, paging_state_response))
@@ -256,10 +258,11 @@ pub async fn drain_sealed_outbox(
              ORDER BY message_id ASC",
             (recipient_id, device_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     // Helper row type for deserialization — includes content_type for filtering.
-    #[derive(scylla::FromRow)]
+    #[derive(scylla::DeserializeRow)]
     struct RawRow {
         message_id: CqlTimeuuid,
         ciphertext: Vec<u8>,
@@ -267,9 +270,7 @@ pub async fn drain_sealed_outbox(
         content_type: String,
     }
 
-    let rows = result
-        .rows_typed::<RawRow>()?
-        .collect::<Result<Vec<_>, _>>()?;
+    let rows = result.rows::<RawRow>()?.collect::<Result<Vec<_>, _>>()?;
 
     let sealed = rows
         .into_iter()

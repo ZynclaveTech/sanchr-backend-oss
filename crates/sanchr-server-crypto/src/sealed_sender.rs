@@ -35,7 +35,7 @@ impl SealedSenderSigner {
 
     /// Generate a random signing key. Use only in dev/test environments.
     pub fn generate(key_id: u32) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand_core::OsRng;
         Self {
             signing_key: SigningKey::generate(&mut rng),
             key_id,

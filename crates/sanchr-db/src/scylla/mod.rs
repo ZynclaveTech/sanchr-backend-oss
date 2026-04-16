@@ -8,7 +8,8 @@ pub mod receipts;
 pub mod vault;
 
 use sanchr_common::config::ScyllaConfig;
-use scylla::{Session, SessionBuilder};
+use scylla::client::session::Session;
+use scylla::client::session_builder::SessionBuilder;
 
 pub const SYNC_PAGE_SIZE: i32 = 100;
 const DEVICE_OUTBOX_DEFAULT_TTL_SECS: i32 = 30 * 24 * 3600;

@@ -9,10 +9,10 @@ use axum::{
     routing::get,
     Router,
 };
-use fred::clients::RedisClient;
+use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use metrics_exporter_prometheus::PrometheusHandle;
-use scylla::Session;
+use scylla::client::session::Session;
 use sqlx::PgPool;
 
 use sanchr_common::config::AppConfig;
@@ -30,7 +30,7 @@ use crate::push::ApnsSender;
 pub struct AppState {
     pub config: AppConfig,
     pub pg_pool: PgPool,
-    pub redis: RedisClient,
+    pub redis: Client,
     pub jwt: JwtManager,
     pub scylla: Session,
     pub nats: async_nats::Client,
@@ -110,7 +110,7 @@ async fn ready(State(state): State<Arc<AppState>>) -> Result<&'static str, Statu
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
     // Check Redis connectivity
-    tokio::time::timeout(Duration::from_secs(2), state.redis.ping::<String>())
+    tokio::time::timeout(Duration::from_secs(2), state.redis.ping::<String>(None))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;

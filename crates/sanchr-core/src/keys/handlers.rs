@@ -119,7 +119,7 @@ pub async fn handle_upload_key_bundle(
     let redis_key = format!("prekey_count:{user_id}:{device_id}");
     state
         .redis
-        .set::<(), _, _>(
+        .set::<(), &str, i64>(
             &redis_key,
             count,
             Some(Expiration::EX(86400 * 7)), // 7-day TTL
@@ -159,7 +159,7 @@ pub async fn handle_get_pre_key_bundle(
 
     // Decrement prekey count in Redis (the DB already consumed one OTP key)
     let redis_key = format!("prekey_count:{target_user_id}:{target_device_id}");
-    let new_count: i64 = state.redis.decr::<i64, _>(&redis_key).await.unwrap_or(0);
+    let new_count: i64 = state.redis.decr::<i64, &str>(&redis_key).await.unwrap_or(0);
 
     if new_count < 20 {
         tracing::warn!(
@@ -258,7 +258,7 @@ pub async fn handle_upload_one_time_pre_keys(
     let redis_key = format!("prekey_count:{user_id}:{device_id}");
     let _ = state
         .redis
-        .set::<(), _, _>(
+        .set::<(), &str, i64>(
             &redis_key,
             count,
             Some(Expiration::EX(86400 * 7)),
@@ -291,7 +291,7 @@ pub async fn handle_get_pre_key_count(
     // Backfill Redis
     let _ = state
         .redis
-        .set::<(), _, _>(
+        .set::<(), &str, i64>(
             &redis_key,
             count,
             Some(Expiration::EX(86400 * 7)),
@@ -356,7 +356,7 @@ pub async fn handle_remove_device(
 
     // Clean up the Redis prekey-count cache for the removed device.
     let redis_key = format!("prekey_count:{user_id}:{target_device_id}");
-    let _ = state.redis.del::<(), _>(&redis_key).await;
+    let _ = state.redis.del::<(), &str>(&redis_key).await;
 
     Ok(deleted)
 }

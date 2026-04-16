@@ -1,10 +1,10 @@
-use scylla::frame::value::CqlTimestamp;
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::CqlTimestamp;
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Row returned from the `call_logs` table.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct CallLogRow {
     pub call_id: Uuid,
     pub peer_id: Uuid,
@@ -66,10 +66,11 @@ pub async fn get_call_history(
              FROM call_logs WHERE user_id = ? LIMIT ?",
             (user_id, limit),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<CallLogRow>()?
+        .rows::<CallLogRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)

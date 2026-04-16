@@ -11,8 +11,56 @@ server:
       "VaultService/WriteVaultItem": 1048576   # 1 MiB
       "MediaService/RequestUpload": 16384      # 16 KiB
 
+# Database connection defaults for local development.
+# Override with SANCHR__DATABASE__* env vars for CI or production.
 database:
+  postgres:
+    url: "postgres://sanchr:sanchr_dev@localhost:5432/sanchr"
+    max_connections: 10
+    min_connections: 2
+  redis:
+    url: "redis://localhost:6379"
+    pool_size: 8
+  scylla:
+    nodes:
+      - "localhost:9042"
+    keyspace: sanchr
+    replication_factor: 1
   nats:
     url: "nats://localhost:4222"
     username: "sanchr"
     password: "changeme-dev-only"
+
+auth:
+  jwt_secret: "CHANGE_ME_jwt_secret_for_local_dev_only"
+  otp_secret: "CHANGE_ME_otp_secret_for_local_dev_only"
+  access_token_ttl: 900
+  refresh_token_ttl: 7776000
+  otp_ttl: 300
+  argon2_memory: 65536
+  argon2_iterations: 3
+  argon2_parallelism: 4
+  dev_mode: true
+
+storage:
+  endpoint: "http://localhost:9000"
+  bucket: "sanchr-media"
+  region: "us-east-1"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  presigned_url_ttl: 2592000
+
+push:
+  fcm_key: "CHANGE_ME"
+  apns_key_path: "/dev/null"
+  apns_team_id: "CHANGE_ME"
+  apns_key_id: "CHANGE_ME"
+  apns_bundle_id: "com.sanchr.app"
+  apns_sandbox: true
+
+calling:
+  turn_secret: "CHANGE_ME_turn_secret_for_local_dev_only"
+  turn_servers:
+    - "turn:localhost:3478"
+  turn_credential_ttl: 86400
+  max_call_duration: 3600

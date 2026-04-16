@@ -15,7 +15,7 @@ use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use sha2::{Digest, Sha512};
 use thiserror::Error;
 

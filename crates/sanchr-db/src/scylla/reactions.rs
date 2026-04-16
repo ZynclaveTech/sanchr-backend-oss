@@ -1,10 +1,10 @@
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Row returned from the `reactions` table.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct ReactionRow {
     pub conversation_id: Uuid,
     pub message_id: CqlTimeuuid,
@@ -78,10 +78,11 @@ pub async fn get_reactions(
              WHERE conversation_id = ? AND message_id = ?",
             (conversation_id, message_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<ReactionRow>()?
+        .rows::<ReactionRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)

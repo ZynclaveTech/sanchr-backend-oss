@@ -3,8 +3,8 @@ mod common;
 use std::sync::Arc;
 
 use chrono::Utc;
-use scylla::frame::value::CqlTimestamp;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::CqlTimestamp;
 use uuid::Uuid;
 
 use sanchr_core::ekf::manager::lifecycle_tick;
@@ -35,10 +35,12 @@ async fn get_entry(
             (user_id, class.to_owned(), entry_id),
         )
         .await
-        .expect("query failed");
+        .expect("query failed")
+        .into_rows_result()
+        .expect("rows result failed");
 
     let rows: Vec<RawRow> = result
-        .rows_typed::<RawRow>()
+        .rows::<RawRow>()
         .expect("type error")
         .collect::<Result<Vec<_>, _>>()
         .expect("row deserialization failed");

@@ -95,4 +95,11 @@ jobs:
           timeout 60 bash -c 'until curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null; do sleep 2; done'
 
       - name: Run tests
+        env:
+          # CI NATS runs without auth (GitHub Actions services don't support
+          # config file mounts). Override the default.yaml credentials so the
+          # client connects without authentication.
+          SANCHR__DATABASE__NATS__USERNAME: ""
+          SANCHR__DATABASE__NATS__PASSWORD: ""
+          SANCHR__AUTH__DEV_MODE: "true"
         run: ${{ inputs.test_command }}

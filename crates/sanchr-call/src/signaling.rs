@@ -79,7 +79,7 @@ pub fn spawn_missed_call_sweeper(state: Arc<CallAppState>) -> tokio::task::JoinH
 /// session is still live in Redis. Returns `(user_id, device_id)`.
 async fn authenticate(
     jwt: &JwtManager,
-    redis: &fred::clients::RedisClient,
+    redis: &fred::clients::Client,
     metadata: &tonic::metadata::MetadataMap,
 ) -> Result<(Uuid, i32), Status> {
     tracing::debug!("authenticate: extracting bearer token");
@@ -563,14 +563,14 @@ fn base64_encode(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
-async fn cleanup_active_call(redis: &fred::clients::RedisClient, call: &call_state::ActiveCall) {
+async fn cleanup_active_call(redis: &fred::clients::Client, call: &call_state::ActiveCall) {
     if let Err(error) = call_state::clear_active_call(redis, call).await {
         tracing::error!(error = %error, call_id = %call.call_id, "failed to clean up active call state");
     }
 }
 
 async fn active_nonterminal_call_for_user(
-    redis: &fred::clients::RedisClient,
+    redis: &fred::clients::Client,
     user_id: &str,
 ) -> Result<bool, Status> {
     let Some(call_id) = call_state::active_call_id_for_user(redis, user_id)
@@ -589,7 +589,7 @@ async fn active_nonterminal_call_for_user(
 }
 
 async fn load_participating_call(
-    redis: &fred::clients::RedisClient,
+    redis: &fred::clients::Client,
     call_id: &str,
     user_id: &str,
 ) -> Result<call_state::ActiveCall, Status> {

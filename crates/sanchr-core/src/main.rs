@@ -149,9 +149,11 @@ async fn build_app_state(
     tracing::info!("ScyllaDB session created");
 
     let nats_cfg = &config.database.nats;
-    let nats_client = match (&nats_cfg.username, &nats_cfg.password) {
+    let nats_user = nats_cfg.username.as_deref().filter(|s| !s.is_empty());
+    let nats_pass = nats_cfg.password.as_deref().filter(|s| !s.is_empty());
+    let nats_client = match (nats_user, nats_pass) {
         (Some(user), Some(pass)) => {
-            async_nats::ConnectOptions::with_user_and_password(user.clone(), pass.clone())
+            async_nats::ConnectOptions::with_user_and_password(user.to_string(), pass.to_string())
                 .connect(&nats_cfg.url)
                 .await?
         }
@@ -371,7 +373,7 @@ fn build_discovery_daily_salt(
 }
 
 async fn register_discovery_lifecycle_entries(
-    scylla: &scylla::Session,
+    scylla: &scylla::client::session::Session,
     config: &AppConfig,
     oprf_secret: &Option<Arc<ArcSwap<OprfServerSecret>>>,
     discovery_daily_salt: &Option<ArcSwap<Vec<u8>>>,

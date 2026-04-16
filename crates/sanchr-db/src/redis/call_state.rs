@@ -46,26 +46,23 @@ fn signal_key(call_id: &str) -> String {
     format!("call:signal_replay:{call_id}")
 }
 
-pub async fn get_active_call(
-    client: &RedisClient,
-    call_id: &str,
-) -> Result<Option<ActiveCall>, RedisError> {
+pub async fn get_active_call(client: &Client, call_id: &str) -> Result<Option<ActiveCall>, Error> {
     let data: Option<String> = client.get(active_key(call_id)).await?;
     Ok(data.and_then(|raw| serde_json::from_str::<ActiveCall>(&raw).ok()))
 }
 
 pub async fn active_call_id_for_user(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
-) -> Result<Option<String>, RedisError> {
+) -> Result<Option<String>, Error> {
     client.get(user_index_key(user_id)).await
 }
 
 pub async fn put_active_call(
-    client: &RedisClient,
+    client: &Client,
     call: &ActiveCall,
     ttl_secs: i64,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let encoded = serde_json::to_string(call).unwrap_or_default();
     client
         .set::<(), _, _>(
@@ -80,11 +77,11 @@ pub async fn put_active_call(
 }
 
 pub async fn begin_active_call(
-    client: &RedisClient,
+    client: &Client,
     call: &ActiveCall,
     ttl_secs: i64,
     missed_deadline_ms: i64,
-) -> Result<bool, RedisError> {
+) -> Result<bool, Error> {
     let encoded = serde_json::to_string(call).unwrap_or_default();
     if encoded.is_empty() {
         return Ok(false);
@@ -109,7 +106,7 @@ pub async fn begin_active_call(
     Ok(created == 1)
 }
 
-pub async fn clear_active_call(client: &RedisClient, call: &ActiveCall) -> Result<(), RedisError> {
+pub async fn clear_active_call(client: &Client, call: &ActiveCall) -> Result<(), Error> {
     client.del::<(), _>(active_key(&call.call_id)).await?;
     client.del::<(), _>(user_index_key(&call.caller_id)).await?;
     client
@@ -121,17 +118,17 @@ pub async fn clear_active_call(client: &RedisClient, call: &ActiveCall) -> Resul
     Ok(())
 }
 
-pub async fn remove_missed_deadline(client: &RedisClient, call_id: &str) -> Result<(), RedisError> {
+pub async fn remove_missed_deadline(client: &Client, call_id: &str) -> Result<(), Error> {
     client
         .zrem::<(), _, _>(MISSED_DEADLINES_KEY, vec![call_id])
         .await
 }
 
 pub async fn due_missed_call_ids(
-    client: &RedisClient,
+    client: &Client,
     now_ms: i64,
     limit: usize,
-) -> Result<Vec<String>, RedisError> {
+) -> Result<Vec<String>, Error> {
     let call_ids: Vec<String> = client
         .zrangebyscore(
             MISSED_DEADLINES_KEY,
@@ -150,10 +147,10 @@ pub async fn due_missed_call_ids(
 }
 
 pub async fn store_call_signal(
-    client: &RedisClient,
+    client: &Client,
     call_id: &str,
     signal: &StoredCallSignal,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let key = signal_key(call_id);
     let encoded = serde_json::to_string(signal).unwrap_or_default();
     if encoded.is_empty() {
@@ -163,14 +160,16 @@ pub async fn store_call_signal(
     client
         .ltrim::<(), _>(&key, 0, SIGNAL_REPLAY_MAX - 1)
         .await?;
-    client.expire::<(), _>(&key, SIGNAL_REPLAY_TTL_SECS).await?;
+    client
+        .expire::<(), _>(&key, SIGNAL_REPLAY_TTL_SECS, None)
+        .await?;
     Ok(())
 }
 
 pub async fn replay_call_signals(
-    client: &RedisClient,
+    client: &Client,
     call_id: &str,
-) -> Result<Vec<StoredCallSignal>, RedisError> {
+) -> Result<Vec<StoredCallSignal>, Error> {
     let mut items: Vec<String> = client.lrange(signal_key(call_id), 0, -1).await?;
     items.reverse();
     Ok(items

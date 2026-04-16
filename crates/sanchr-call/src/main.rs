@@ -16,8 +16,8 @@ const PLACEHOLDER_TURN_SECRET: &str = "replace-me-with-a-unique-turn-secret";
 
 pub struct CallAppState {
     pub config: AppConfig,
-    pub redis: fred::clients::RedisClient,
-    pub scylla: scylla::Session,
+    pub redis: fred::clients::Client,
+    pub scylla: scylla::client::session::Session,
     pub nats: async_nats::Client,
     pub jwt: sanchr_server_crypto::jwt::JwtManager,
 }
@@ -59,11 +59,16 @@ async fn main() -> anyhow::Result<()> {
 
     let nats = {
         let nats_cfg = &config.database.nats;
-        match (&nats_cfg.username, &nats_cfg.password) {
+        let nats_user = nats_cfg.username.as_deref().filter(|s| !s.is_empty());
+        let nats_pass = nats_cfg.password.as_deref().filter(|s| !s.is_empty());
+        match (nats_user, nats_pass) {
             (Some(user), Some(pass)) => {
-                async_nats::ConnectOptions::with_user_and_password(user.clone(), pass.clone())
-                    .connect(&nats_cfg.url)
-                    .await?
+                async_nats::ConnectOptions::with_user_and_password(
+                    user.to_string(),
+                    pass.to_string(),
+                )
+                .connect(&nats_cfg.url)
+                .await?
             }
             _ => {
                 if !config.auth.dev_mode {

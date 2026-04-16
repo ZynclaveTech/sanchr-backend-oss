@@ -5,7 +5,6 @@
 //! The daily salt is rotated every 24 hours via the EKF, limiting rainbow-table
 //! exposure for the hash values stored in the bit-array.
 
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 /// Generate a cryptographically random 32-byte salt for daily Bloom filter rotation.
@@ -13,7 +12,7 @@ use sha2::{Digest, Sha256};
 /// Uses the OS CSPRNG via `rand::rngs::OsRng`.
 pub fn generate_daily_salt() -> Vec<u8> {
     let mut salt = vec![0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut salt);
+    rand::fill(&mut salt);
     salt
 }
 

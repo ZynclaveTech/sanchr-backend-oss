@@ -1,10 +1,10 @@
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Row returned from the `messages` table.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct MessageRow {
     pub conversation_id: Uuid,
     pub message_id: CqlTimeuuid,
@@ -81,10 +81,11 @@ pub async fn get_messages(
              LIMIT ?",
             (conversation_id, limit),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<MessageRow>()?
+        .rows::<MessageRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)
@@ -103,9 +104,10 @@ pub async fn get_message(
              WHERE conversation_id = ? AND message_id = ?",
             (conversation_id, message_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
-    let row = result.rows_typed::<MessageRow>()?.next().transpose()?;
+    let row = result.maybe_first_row::<MessageRow>()?;
     Ok(row)
 }
 

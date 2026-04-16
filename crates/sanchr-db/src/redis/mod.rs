@@ -9,13 +9,13 @@ pub mod typing;
 
 use std::time::Duration;
 
-use fred::clients::RedisClient;
-use fred::error::RedisError;
+use fred::clients::Client;
+use fred::error::Error;
 use fred::interfaces::ClientLike;
-use fred::types::{PerformanceConfig, ReconnectPolicy, RedisConfig as FredConfig};
+use fred::types::config::{Config as FredConfig, PerformanceConfig, ReconnectPolicy};
 use sanchr_common::config::RedisConfig as AppRedisConfig;
 
-pub async fn create_client(config: &AppRedisConfig) -> Result<RedisClient, RedisError> {
+pub async fn create_client(config: &AppRedisConfig) -> Result<Client, Error> {
     let fred_config = FredConfig::from_url(&config.url)?;
 
     // Reconnect with exponential backoff (100 ms → 30 s) on any connection drop.
@@ -30,7 +30,7 @@ pub async fn create_client(config: &AppRedisConfig) -> Result<RedisClient, Redis
         ..Default::default()
     };
 
-    let client = RedisClient::new(fred_config, Some(perf), None, Some(policy));
+    let client = Client::new(fred_config, Some(perf), None, Some(policy));
     client.connect();
     client.wait_for_connect().await?;
     Ok(client)

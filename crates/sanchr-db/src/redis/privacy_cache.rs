@@ -111,7 +111,7 @@ fn cache_key(user_id: &Uuid) -> String {
 /// Get privacy flags for a user. Tries Redis first, falls back to Postgres.
 /// On Postgres fetch, caches the result in Redis with 5-minute TTL.
 pub async fn get_privacy_flags(
-    redis: &RedisClient,
+    redis: &Client,
     pg_pool: &PgPool,
     user_id: Uuid,
 ) -> Result<PrivacyFlags, String> {
@@ -179,7 +179,7 @@ pub async fn get_privacy_flags(
 
 /// Invalidate the cached privacy flags for a user.
 /// Call this when settings are updated.
-pub async fn invalidate(redis: &RedisClient, user_id: &Uuid) {
+pub async fn invalidate(redis: &Client, user_id: &Uuid) {
     let key = cache_key(user_id);
     let _ = redis.del::<(), _>(&key).await;
 }

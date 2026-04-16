@@ -1,13 +1,13 @@
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Paper Section 5.2.1 bounds typing/read state to 5 minutes.
 const RECEIPT_TTL_SECS: i64 = 300;
 
 /// Row returned from the `message_receipts` table.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct ReceiptRow {
     pub conversation_id: Uuid,
     pub message_id: CqlTimeuuid,
@@ -63,9 +63,10 @@ pub async fn get_receipt(
              WHERE conversation_id = ? AND message_id = ? AND recipient_id = ?",
             (conversation_id, message_id, recipient_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
-    let row = result.rows_typed::<ReceiptRow>()?.next().transpose()?;
+    let row = result.maybe_first_row::<ReceiptRow>()?;
     Ok(row)
 }
 
@@ -82,10 +83,11 @@ pub async fn get_receipts(
              WHERE conversation_id = ? AND message_id = ?",
             (conversation_id, message_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<ReceiptRow>()?
+        .rows::<ReceiptRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)

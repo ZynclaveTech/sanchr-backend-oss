@@ -70,11 +70,11 @@ fn decode_stored(raw: &str) -> Option<StoredCallInboxEvent> {
 }
 
 pub async fn push_call_event(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
     payload: &CallInboxEvent,
     event_ttl_secs: i64,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let key = inbox_key(user_id);
     let ttl = event_ttl_secs.clamp(1, CALL_EVENT_INBOX_TTL_SECS);
     let stored = StoredCallInboxEvent {
@@ -91,7 +91,7 @@ pub async fn push_call_event(
         .ltrim::<(), _>(&key, 0, CALL_EVENT_INBOX_MAX - 1)
         .await?;
     client
-        .expire::<(), _>(&key, CALL_EVENT_INBOX_TTL_SECS)
+        .expire::<(), _>(&key, CALL_EVENT_INBOX_TTL_SECS, None)
         .await?;
     Ok(())
 }
@@ -104,10 +104,10 @@ pub async fn push_call_event(
 /// recipient should still transition away from any `.incoming` state that
 /// was set up by an already-delivered VoIP push.
 pub async fn evict_offer_for_call(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
     call_id: &str,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let key = inbox_key(user_id);
     let items: Vec<String> = client.lrange(&key, 0, -1).await?;
     for raw in items {
@@ -126,11 +126,11 @@ pub async fn evict_offer_for_call(
 }
 
 pub async fn ack_call_event(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
     call_id: &str,
     kind: &str,
-) -> Result<(), RedisError> {
+) -> Result<(), Error> {
     let key = inbox_key(user_id);
     let items: Vec<String> = client.lrange(&key, 0, -1).await?;
     for raw in items {
@@ -144,11 +144,11 @@ pub async fn ack_call_event(
 }
 
 pub async fn has_call_event(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
     call_id: &str,
     kind: &str,
-) -> Result<bool, RedisError> {
+) -> Result<bool, Error> {
     let key = inbox_key(user_id);
     let items: Vec<String> = client.lrange(&key, 0, -1).await?;
     let now = now_ms();
@@ -164,9 +164,9 @@ pub async fn has_call_event(
 }
 
 pub async fn peek_call_events(
-    client: &RedisClient,
+    client: &Client,
     user_id: &str,
-) -> Result<Vec<CallInboxEvent>, RedisError> {
+) -> Result<Vec<CallInboxEvent>, Error> {
     let key = inbox_key(user_id);
     let events: Vec<String> = client.lrange(&key, 0, -1).await?;
 

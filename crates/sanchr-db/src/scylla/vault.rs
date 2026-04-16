@@ -71,10 +71,11 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use scylla::batch::{Batch, BatchType};
-use scylla::frame::value::CqlTimestamp;
-use scylla::statement::{PagingState, PagingStateResponse};
-use scylla::{FromRow, Session};
+use scylla::client::session::Session;
+use scylla::response::{PagingState, PagingStateResponse};
+use scylla::statement::batch::{Batch, BatchType};
+use scylla::value::CqlTimestamp;
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 /// Version tag prepended to the raw `PagingState` bytes before base64
@@ -93,7 +94,7 @@ const CURSOR_VERSION: u8 = 0x01;
 ///
 /// Field order MUST match the column order of the `SELECT` statements below
 /// for `FromRow` to decode correctly.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct VaultItemRow {
     pub user_id: Uuid,
     pub vault_item_id: Uuid,
@@ -141,13 +142,9 @@ pub async fn insert_vault_item(
             "SELECT vault_item_id FROM vault_items WHERE user_id = ? AND vault_item_id = ?",
             (user_id, vault_item_id),
         )
-        .await?;
-    if existing
-        .rows_typed::<(Uuid,)>()?
-        .next()
-        .transpose()?
-        .is_some()
-    {
+        .await?
+        .into_rows_result()?;
+    if existing.maybe_first_row::<(Uuid,)>()?.is_some() {
         return Ok(false);
     }
 
@@ -219,9 +216,10 @@ pub async fn get_vault_item(
             ),
             (user_id, vault_item_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
-    let row = result.rows_typed::<VaultItemRow>()?.next().transpose()?;
+    let row = result.maybe_first_row::<VaultItemRow>()?;
     Ok(row)
 }
 
@@ -287,8 +285,9 @@ pub async fn list_vault_items(
         .execute_single_page(&prepared, (user_id,), paging_state)
         .await?;
 
+    let result = result.into_rows_result()?;
     let rows = result
-        .rows_typed::<VaultItemRow>()?
+        .rows::<VaultItemRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     let next_cursor = match paging_state_response {

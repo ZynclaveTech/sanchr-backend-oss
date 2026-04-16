@@ -8,9 +8,9 @@
 // expired entries across all users for a given key class without a full-table
 // scan.
 
-use scylla::frame::value::CqlTimestamp;
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::value::CqlTimestamp;
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 /// A row returned by [`fetch_expired_entries`].
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct ExpiredEntryRow {
     pub user_id: Uuid,
     pub entry_id: Uuid,
@@ -212,7 +212,8 @@ pub async fn fetch_expired_entries(
              ALLOW FILTERING",
             (class.to_owned(),),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     // `created_at` is a ScyllaDB TIMESTAMP which arrives as CqlTimestamp(i64).
     // We need to unpack the inner i64 manually since CqlTimestamp does not
@@ -221,7 +222,7 @@ pub async fn fetch_expired_entries(
     type RawRow = (Uuid, Uuid, String, String, Vec<u8>, CqlTimestamp, i64);
 
     let all_rows: Vec<ExpiredEntryRow> = result
-        .rows_typed::<RawRow>()?
+        .rows::<RawRow>()?
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .map(

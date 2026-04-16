@@ -1,13 +1,13 @@
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::statement::{PagingState, PagingStateResponse};
-use scylla::FromRow;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::response::{PagingState, PagingStateResponse};
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
+use scylla::DeserializeRow;
 use uuid::Uuid;
 
 use super::SYNC_PAGE_SIZE;
 
 /// Row returned from the `pending_messages` table.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, DeserializeRow)]
 pub struct PendingMessageRow {
     pub recipient_id: Uuid,
     pub recipient_device: i32,
@@ -71,10 +71,11 @@ pub async fn drain_pending(
              WHERE recipient_id = ? AND recipient_device = ?",
             (recipient_id, device_id),
         )
-        .await?;
+        .await?
+        .into_rows_result()?;
 
     let rows = result
-        .rows_typed::<PendingMessageRow>()?
+        .rows::<PendingMessageRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(rows)
@@ -101,8 +102,9 @@ pub async fn get_pending_messages_page(
         .execute_single_page(&prepared, (recipient_id, device_id), paging_state)
         .await?;
 
+    let result = result.into_rows_result()?;
     let rows = result
-        .rows_typed::<PendingMessageRow>()?
+        .rows::<PendingMessageRow>()?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok((rows, paging_state_response))

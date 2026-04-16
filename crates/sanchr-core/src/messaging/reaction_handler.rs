@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use scylla::frame::value::CqlTimeuuid;
+use scylla::value::CqlTimeuuid;
 use tonic::Status;
 use uuid::Uuid;
 

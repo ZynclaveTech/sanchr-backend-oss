@@ -13,6 +13,7 @@ pub mod contacts {
 pub mod settings {
     tonic::include_proto!("sanchr.settings");
 }
+#[allow(clippy::doc_lazy_continuation)]
 pub mod vault {
     tonic::include_proto!("sanchr.vault");
 }

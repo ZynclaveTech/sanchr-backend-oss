@@ -3,8 +3,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use scylla::frame::value::{CqlTimestamp, CqlTimeuuid};
-use scylla::statement::{PagingState, PagingStateResponse};
+use scylla::response::{PagingState, PagingStateResponse};
+use scylla::value::{CqlTimestamp, CqlTimeuuid};
 use tonic::Status;
 use uuid::Uuid;
 

@@ -100,7 +100,7 @@ where
                 );
 
                 let status = tonic::Status::resource_exhausted("request body exceeds size limit");
-                let http_response = status.into_http();
+                let http_response = status.into_http::<ResBody>();
                 let (parts, _body) = http_response.into_parts();
                 let response = Response::from_parts(parts, ResBody::default());
 
