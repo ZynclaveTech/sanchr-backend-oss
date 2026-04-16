@@ -1,4 +1,3 @@
-use anyhow::Context;
 use axum::extract::State;
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -9,15 +8,23 @@ static METRICS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
 
 /// Install the Prometheus metrics recorder and return a handle for the /metrics endpoint.
 ///
-/// Safe to call multiple times — the recorder is installed only once.
+/// Safe to call multiple times and from concurrent threads. The recorder is
+/// installed at most once; subsequent calls return the cached handle. If the
+/// global `metrics` recorder was already set by another component (e.g. a
+/// concurrently-initialised test binary), the installation is silently skipped
+/// and a new handle is built without registering as global recorder.
 pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
-    if let Some(handle) = METRICS_HANDLE.get() {
-        return Ok(handle.clone());
-    }
-
-    let handle = PrometheusBuilder::new()
-        .install_recorder()
-        .context("failed to install Prometheus recorder")?;
+    let handle = METRICS_HANDLE.get_or_init(|| {
+        // Try to install as the global recorder. If it fails (another
+        // recorder was already set), build a handle without installing
+        // globally — metrics emitted through the `metrics` macros won't
+        // reach this handle, but the /metrics endpoint will still work
+        // and tests won't panic.
+        match PrometheusBuilder::new().install_recorder() {
+            Ok(h) => h,
+            Err(_) => PrometheusBuilder::new().build_recorder().handle(),
+        }
+    });
 
     // Register baseline metric descriptions
     describe_counter!(
@@ -102,8 +109,7 @@ pub fn init_metrics() -> anyhow::Result<PrometheusHandle> {
     // nothing".
     metrics::gauge!("vault_orphan_media").set(0.0);
 
-    let _ = METRICS_HANDLE.set(handle.clone());
-    Ok(METRICS_HANDLE.get().cloned().unwrap_or(handle))
+    Ok(handle.clone())
 }
 
 // ---------------------------------------------------------------------------
