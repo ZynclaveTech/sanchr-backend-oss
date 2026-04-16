@@ -188,9 +188,17 @@ async fn build_app_state(
     .await?;
     let discovery_snapshot_cache = Arc::new(discovery::cache::DiscoverySnapshotCache::new());
     let sealed_sender_signer = build_sealed_sender_signer(&config)?;
-    let push_sender = ApnsSender::from_config(&config.push)
-        .context("failed to initialise APNs push sender")?
-        .map(Arc::new);
+    let push_sender = match ApnsSender::from_config(&config.push) {
+        Ok(sender) => sender.map(Arc::new),
+        Err(e) if config.auth.dev_mode => {
+            tracing::warn!(
+                error = %e,
+                "APNs sender init failed; continuing without push in dev_mode"
+            );
+            None
+        }
+        Err(e) => return Err(e.context("failed to initialise APNs push sender")),
+    };
 
     let crypto_provider: Arc<dyn sanchr_server_crypto::provider::CryptoProvider> =
         Arc::new(LocalCryptoProvider::new(
