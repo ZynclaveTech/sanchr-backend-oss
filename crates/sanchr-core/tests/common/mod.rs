@@ -74,9 +74,10 @@ pub async fn setup_test_state() -> Arc<sanchr_core::server::AppState> {
             .send()
             .await
         {
-            let message = error.to_string();
-            if !message.contains("BucketAlreadyOwnedByYou")
-                && !message.contains("BucketAlreadyExists")
+            // Use Debug format — Display may not include the SDK error variant name.
+            let debug_msg = format!("{error:?}");
+            if !debug_msg.contains("BucketAlreadyOwnedByYou")
+                && !debug_msg.contains("BucketAlreadyExists")
             {
                 panic!("failed to create test bucket: {error:?}");
             }

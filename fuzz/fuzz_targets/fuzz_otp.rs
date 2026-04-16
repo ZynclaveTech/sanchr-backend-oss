@@ -24,12 +24,7 @@ fuzz_target!(|data: &[u8]| {
     ttl_bytes.copy_from_slice(&data[ts_start + 8..ts_start + 16]);
     let ttl_seconds = u64::from_be_bytes(ttl_bytes);
 
-    // Avoid division by zero in time_window calculation.
-    if ttl_seconds == 0 {
-        return;
-    }
-
-    // Fuzz generate_otp: should never panic.
+    // Fuzz generate_otp: should never panic, even with ttl_seconds == 0.
     if let Ok(otp_code) = otp::generate_otp(secret, phone, timestamp, ttl_seconds) {
         // Fuzz verify_otp with the generated code: should never panic.
         let _ = otp::verify_otp(secret, phone, &otp_code, timestamp, ttl_seconds);

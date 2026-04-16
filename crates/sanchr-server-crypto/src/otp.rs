@@ -16,7 +16,12 @@ pub enum OtpError {
 }
 
 /// Compute the time window index for a given timestamp and TTL.
+///
+/// Returns 0 if `ttl_seconds` is 0 to avoid division by zero.
 fn time_window(timestamp: i64, ttl_seconds: u64) -> i64 {
+    if ttl_seconds == 0 {
+        return 0;
+    }
     timestamp / ttl_seconds as i64
 }
 
