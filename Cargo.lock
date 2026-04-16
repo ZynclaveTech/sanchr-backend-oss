@@ -4015,7 +4015,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-call"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -4041,7 +4041,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-common"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "chrono",
  "config",
@@ -4057,7 +4057,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "a2",
  "anyhow",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-db"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -4128,7 +4128,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-proto"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "prost",
  "prost-types",
@@ -4140,7 +4140,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-psi"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "criterion",
  "curve25519-dalek",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "sanchr-server-crypto"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "argon2",
  "async-trait",

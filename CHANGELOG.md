@@ -4,7 +4,9 @@ All notable changes to the Sanchr backend will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.0.1] - 2026-04-16
+
+Initial public release.
 
 ### Added
 
