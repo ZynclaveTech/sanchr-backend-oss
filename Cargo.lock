@@ -4028,6 +4028,7 @@ dependencies = [
  "prost-types 0.13.5",
  "tonic",
  "tonic-build",
+ "tonic-prost",
  "tonic-prost-build",
 ]
 
