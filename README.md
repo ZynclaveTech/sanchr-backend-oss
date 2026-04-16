@@ -9,6 +9,24 @@ deployment manifests, production CI/CD, cloud credentials, and operational
 runbooks. Operators are expected to wire infrastructure and runtime policy in
 their own environment.
 
+## Research Paper
+
+The design and security guarantees of the Sanchr protocol are described in
+the research paper:
+
+**[Sanchr: Privacy-first Messaging with Ephemeral Key Framework and OPRF Contact Discovery](https://sanchr.com/research.pdf)**
+
+The paper covers:
+
+- OPRF-PSI contact discovery protocol on Ristretto255
+- EKF (Ephemeral Key Framework) lifecycle model with per-class expiry policies
+- Ratchet-bound media key derivation (`MediaK_n = HKDF(CK_n, file_hash, "media-v1")`)
+- Threat model (T1/T2/T3 × S1/S2/S3 matrix) and formal security claims
+- Composition proofs for forward secrecy and cross-domain persistence
+
+Formal verification models (Tamarin) and the hand-written composition proof
+accompany this paper under [`docs/proofs/`](docs/proofs/).
+
 ## Status
 
 - Public source release of the backend codebase.
