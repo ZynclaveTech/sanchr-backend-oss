@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sanchr.fullname" . }}-core
+  labels:
+    {{- include "sanchr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+spec:
+  {{- if not .Values.core.autoscaling.enabled }}
+  replicas: {{ .Values.core.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "sanchr.core.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.core.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "sanchr.core.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "sanchr.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: sanchr-core
+          image: "{{ .Values.core.image.repository }}:{{ .Values.core.image.tag }}"
+          imagePullPolicy: {{ .Values.core.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.core.service.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.core.service.httpPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "sanchr.fullname" . }}
+          env:
+            # --- Secrets: Auth ---
+            {{- if .Values.existingSecrets.auth }}
+            - name: SANCHR__AUTH__JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.auth }}
+                  key: jwt_secret
+            - name: SANCHR__AUTH__OTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.auth }}
+                  key: otp_secret
+            {{- end }}
+            # --- Secrets: Storage (S3) ---
+            {{- if .Values.existingSecrets.storage }}
+            - name: SANCHR__STORAGE__ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.storage }}
+                  key: access_key
+            - name: SANCHR__STORAGE__SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.storage }}
+                  key: secret_key
+            {{- end }}
+            # --- Secrets: Push notifications ---
+            {{- if .Values.existingSecrets.push }}
+            - name: SANCHR__PUSH__APNS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.push }}
+                  key: apns_key
+                  optional: true
+            - name: SANCHR__PUSH__FCM_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.push }}
+                  key: fcm_key
+                  optional: true
+            {{- end }}
+            # --- Secrets: NATS password ---
+            {{- if .Values.config.database.nats.password }}
+            - name: SANCHR__DATABASE__NATS__PASSWORD
+              value: {{ .Values.config.database.nats.password | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.core.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      {{- with .Values.core.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.core.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.core.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

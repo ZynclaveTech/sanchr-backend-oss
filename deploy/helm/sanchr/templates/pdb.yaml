@@ -1,0 +1,29 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "sanchr.fullname" . }}-core
+  labels:
+    {{- include "sanchr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "sanchr.core.selectorLabels" . | nindent 6 }}
+---
+{{- if .Values.call.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "sanchr.fullname" . }}-call
+  labels:
+    {{- include "sanchr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: call
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "sanchr.call.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use sanchr_common::config::AppConfig;
 use sanchr_core::auth;
+use sanchr_core::auth::challenge::PowChallengeProvider;
 use sanchr_core::backup;
 use sanchr_core::contacts;
 use sanchr_core::discovery;
@@ -39,6 +40,7 @@ use sanchr_proto::vault::vault_service_server::VaultServiceServer;
 use sanchr_psi::bloom::generate_daily_salt;
 use sanchr_psi::oprf::OprfServerSecret;
 use sanchr_server_crypto::jwt::JwtManager;
+use sanchr_server_crypto::local_provider::LocalCryptoProvider;
 use sanchr_server_crypto::sealed_sender::SealedSenderSigner;
 
 use auth::service::AuthServiceImpl;
@@ -51,6 +53,7 @@ use messaging::service::MessagingServiceImpl;
 use messaging::stream::StreamManager;
 use notifications::service::NotificationServiceImpl;
 use observability::grpc_metrics::GrpcMetricsLayer;
+use sanchr_core::middleware::request_size::RequestSizeLayer;
 use server::{http_router, AppState};
 use settings::service::SettingsServiceImpl;
 use vault::service::VaultServiceImpl;
@@ -145,7 +148,25 @@ async fn build_app_state(
         .map_err(|e| anyhow::anyhow!("failed to create ScyllaDB session: {e}"))?;
     tracing::info!("ScyllaDB session created");
 
-    let nats_client = async_nats::connect(&config.database.nats.url).await?;
+    let nats_cfg = &config.database.nats;
+    let nats_client = match (&nats_cfg.username, &nats_cfg.password) {
+        (Some(user), Some(pass)) => {
+            async_nats::ConnectOptions::with_user_and_password(user.clone(), pass.clone())
+                .connect(&nats_cfg.url)
+                .await?
+        }
+        _ => {
+            if !config.auth.dev_mode {
+                tracing::warn!(
+                    "NATS credentials not configured; connecting without authentication. \
+                     Set database.nats.username and database.nats.password for production."
+                );
+            }
+            async_nats::ConnectOptions::new()
+                .connect(&nats_cfg.url)
+                .await?
+        }
+    };
     tracing::info!("NATS client connected");
 
     let s3_client = build_s3_client(&config);
@@ -169,6 +190,33 @@ async fn build_app_state(
         .context("failed to initialise APNs push sender")?
         .map(Arc::new);
 
+    let crypto_provider: Arc<dyn sanchr_server_crypto::provider::CryptoProvider> =
+        Arc::new(LocalCryptoProvider::new(
+            JwtManager::new(config.auth.jwt_secret.as_bytes()),
+            config.auth.otp_secret.clone(),
+            config.auth.otp_ttl,
+            Arc::clone(&sealed_sender_signer),
+            config.calling.turn_secret.clone(),
+        ));
+
+    let challenge_provider: Option<Arc<dyn sanchr_core::auth::challenge::ChallengeProvider>> =
+        if config.challenge.enabled {
+            let provider = PowChallengeProvider::new(
+                config.challenge.pow_difficulty,
+                config.challenge.challenge_ttl_secs,
+                redis_client.clone(),
+            );
+            tracing::info!(
+                difficulty = config.challenge.pow_difficulty,
+                ttl = config.challenge.challenge_ttl_secs,
+                "PoW challenge provider enabled"
+            );
+            Some(Arc::new(provider))
+        } else {
+            tracing::info!("challenge system disabled");
+            None
+        };
+
     Ok(Arc::new(AppState {
         config,
         pg_pool,
@@ -184,6 +232,8 @@ async fn build_app_state(
         discovery_snapshot_cache,
         sealed_sender_signer,
         push_sender,
+        challenge_provider,
+        crypto_provider,
     }))
 }
 
@@ -396,16 +446,19 @@ fn spawn_background_tasks(state: Arc<AppState>) -> Vec<JoinHandle<()>> {
         Arc::clone(&state),
     ));
 
-    if let Some(ekf_config) = &state.config.ekf {
-        if ekf_config.enabled {
-            let ekf_state = state.clone();
-            let tick_interval = std::time::Duration::from_secs(ekf_config.tick_interval_secs);
-            let handle = tokio::spawn(async move {
-                ekf::manager::run_lifecycle_loop(ekf_state, tick_interval).await;
-            });
-            tasks.push(handle);
-            tracing::info!("EKF lifecycle manager spawned");
-        }
+    if state.config.ekf.enabled {
+        let ekf_state = state.clone();
+        let tick_interval = std::time::Duration::from_secs(state.config.ekf.tick_interval_secs);
+        let handle = tokio::spawn(async move {
+            ekf::manager::run_lifecycle_loop(ekf_state, tick_interval).await;
+        });
+        tasks.push(handle);
+        tracing::info!("EKF lifecycle manager spawned");
+    } else if !state.config.auth.dev_mode {
+        tracing::warn!(
+            "EKF is disabled — paper security guarantees D1 (24h discovery bound) \
+             and D2 (30d media bound) are not enforced"
+        );
     }
 
     // Spawn daily salt rotation if OPRF discovery is enabled.
@@ -546,8 +599,14 @@ async fn serve(state: Arc<AppState>, http_port: u16, grpc_port: u16) -> anyhow::
     let grpc_addr: SocketAddr = ([0, 0, 0, 0], grpc_port).into();
     tracing::info!(%grpc_addr, "gRPC server listening");
 
+    let request_size_layer = RequestSizeLayer::from_config(&state.config.server.request_size);
+
     let grpc_server = TonicServer::builder()
-        .layer(ServiceBuilder::new().layer(GrpcMetricsLayer))
+        .layer(
+            ServiceBuilder::new()
+                .layer(request_size_layer)
+                .layer(GrpcMetricsLayer),
+        )
         .add_service(AuthServiceServer::new(auth_service))
         .add_service(BackupServiceServer::new(backup_service))
         .add_service(KeyServiceServer::new(keys_service))

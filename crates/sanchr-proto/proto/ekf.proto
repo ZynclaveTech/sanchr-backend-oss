@@ -2,9 +2,16 @@ syntax = "proto3";
 package sanchr.ekf;
 option java_package = "com.sanchr.ekf";
 
+// EkfRotationNeeded is an internal event emitted when a user's ephemeral
+// key framework (EKF) key has expired and requires rotation. Consumed by
+// the key rotation background worker.
 message EkfRotationNeeded {
+    // UUID of the user whose key needs rotation.
     string user_id = 1;
+    // Key class requiring rotation (e.g., "signed_pre_key", "kyber_pre_key").
     string key_class = 2;
+    // Unix timestamp (seconds) when the key expired.
     int64  expired_at = 3;
+    // Internal entry identifier for the expired key record.
     string entry_id = 4;
 }

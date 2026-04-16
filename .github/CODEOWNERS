@@ -1,0 +1,13 @@
+# Core team owns crypto, protocol, and auth
+/crates/sanchr-server-crypto/ @sanchr/core-team
+/crates/sanchr-psi/ @sanchr/core-team
+/crates/sanchr-core/src/auth/ @sanchr/core-team
+/crates/sanchr-core/src/ekf/ @sanchr/core-team
+/crates/sanchr-core/src/messaging/sealed*.rs @sanchr/core-team
+/crates/sanchr-proto/proto/ @sanchr/core-team
+
+# Community-reviewable areas
+/deploy/helm/ @sanchr/community-reviewers
+/docs/ @sanchr/community-reviewers
+/config/ @sanchr/community-reviewers
+/.github/ISSUE_TEMPLATE/ @sanchr/community-reviewers

@@ -1,0 +1,38 @@
+Sanchr backend has been deployed to namespace {{ .Release.Namespace }}.
+
+Components:
+  - sanchr-core  (gRPC :{{ .Values.core.service.grpcPort }}, HTTP :{{ .Values.core.service.httpPort }})
+{{- if .Values.call.enabled }}
+  - sanchr-call  (gRPC :{{ .Values.call.service.grpcPort }})
+{{- end }}
+
+Verify the rollout:
+
+  kubectl rollout status deployment/{{ include "sanchr.fullname" . }}-core -n {{ .Release.Namespace }}
+{{- if .Values.call.enabled }}
+  kubectl rollout status deployment/{{ include "sanchr.fullname" . }}-call -n {{ .Release.Namespace }}
+{{- end }}
+
+Check health:
+
+  kubectl port-forward svc/{{ include "sanchr.fullname" . }}-core {{ .Values.core.service.httpPort }}:{{ .Values.core.service.httpPort }} -n {{ .Release.Namespace }}
+  curl http://localhost:{{ .Values.core.service.httpPort }}/health
+
+Test gRPC connectivity:
+
+  kubectl port-forward svc/{{ include "sanchr.fullname" . }}-core {{ .Values.core.service.grpcPort }}:{{ .Values.core.service.grpcPort }} -n {{ .Release.Namespace }}
+  grpcurl -plaintext localhost:{{ .Values.core.service.grpcPort }} list
+
+{{- if not .Values.existingSecrets.auth }}
+
+WARNING: existingSecrets.auth is not set. The core deployment will start without
+JWT/OTP secrets. Create a Kubernetes Secret with keys "jwt_secret" and "otp_secret",
+then set existingSecrets.auth to its name.
+{{- end }}
+
+{{- if not .Values.existingSecrets.storage }}
+
+WARNING: existingSecrets.storage is not set. S3-compatible storage credentials are
+missing. Create a Secret with keys "access_key" and "secret_key", then set
+existingSecrets.storage to its name.
+{{- end }}

@@ -101,5 +101,9 @@ aws-credential-types = "1"
 # Concurrency
 arc-swap = "1"
 
+# Trait abstraction
+async-trait = "0.1"
+
 # Testing
 tokio-test = "0.4"
+criterion = { version = "0.5", features = ["html_reports"] }

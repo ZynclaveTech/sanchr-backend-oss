@@ -6,7 +6,14 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+kms-aws = ["dep:aws-sdk-kms"]
+kms-vault = ["dep:reqwest"]
+
 [dependencies]
+aws-sdk-kms = { version = "1", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 argon2 = { workspace = true }
 jsonwebtoken = { workspace = true }
 rand = { workspace = true }
@@ -23,6 +30,12 @@ subtle = "2"
 ed25519-dalek = { workspace = true }
 sanchr-proto = { path = "../sanchr-proto" }
 prost = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "crypto_benchmarks"
+harness = false

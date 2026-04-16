@@ -1,0 +1,18 @@
+{{- if .Values.call.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sanchr.fullname" . }}-call
+  labels:
+    {{- include "sanchr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: call
+spec:
+  type: {{ .Values.call.service.type }}
+  ports:
+    - port: {{ .Values.call.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "sanchr.call.selectorLabels" . | nindent 4 }}
+{{- end }}

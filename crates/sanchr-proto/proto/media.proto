@@ -1,40 +1,85 @@
 syntax = "proto3";
 package sanchr.media;
 
+// MediaService manages encrypted media upload and download via presigned URLs.
+// Clients encrypt media locally before uploading; the server stores only
+// opaque ciphertext. All RPCs require a valid Bearer token in the
+// `authorization` metadata header.
 service MediaService {
+  // GetUploadUrl generates a presigned PUT URL for uploading an encrypted
+  // media blob to object storage. The returned media_id must be confirmed
+  // via ConfirmUpload after the PUT succeeds.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (file_size <= 0 or unsupported content_type),
+  //   RESOURCE_EXHAUSTED (storage quota exceeded).
   rpc GetUploadUrl(GetUploadUrlRequest) returns (PresignedUrlResponse);
+
+  // GetDownloadUrl generates a presigned GET URL for downloading a
+  // previously uploaded media blob.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown media_id), PERMISSION_DENIED (not owner or
+  //   recipient).
   rpc GetDownloadUrl(GetDownloadUrlRequest) returns (PresignedUrlResponse);
+
+  // ConfirmUpload marks a media upload as complete. Must be called after
+  // the client successfully PUTs the blob to the presigned URL. Until
+  // confirmed, the media object is invisible to other RPCs and subject to
+  // garbage collection.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown media_id), FAILED_PRECONDITION (size mismatch
+  //   with GetUploadUrl).
   rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
 }
 
+// MediaPurpose controls ACL and storage path for uploaded media.
 enum MediaPurpose {
-  MEDIA_PURPOSE_ATTACHMENT = 0; // E2EE message attachment (private, presigned access)
-  MEDIA_PURPOSE_AVATAR = 1;     // Profile avatar (public-read via CDN)
+  // E2EE message attachment (private, presigned access).
+  MEDIA_PURPOSE_ATTACHMENT = 0;
+  // Profile avatar (public-read via CDN).
+  MEDIA_PURPOSE_AVATAR = 1;
 }
 
 message GetUploadUrlRequest {
+  // Size of the encrypted blob in bytes.
   int64 file_size = 1;
-  string content_type = 2;    // MIME type: "image/jpeg", "video/mp4", etc.
-  string sha256_hash = 3;     // hash of encrypted blob for dedup
-  MediaPurpose purpose = 4;   // controls ACL and storage path
+  // MIME type of the encrypted content (e.g., "image/jpeg", "video/mp4").
+  string content_type = 2;
+  // SHA-256 hash of the encrypted blob, hex-encoded. Used for server-side
+  // deduplication.
+  string sha256_hash = 3;
+  // Controls ACL and storage path.
+  MediaPurpose purpose = 4;
 }
 
 message GetDownloadUrlRequest {
+  // UUID of the media object to download.
   string media_id = 1;
 }
 
+// PresignedUrlResponse is returned by both GetUploadUrl and GetDownloadUrl.
 message PresignedUrlResponse {
-  string url = 1;             // presigned PUT/GET URL (for upload/download)
+  // Presigned PUT (upload) or GET (download) URL.
+  string url = 1;
+  // Server-assigned media object UUID.
   string media_id = 2;
-  int64 expires_in = 3;       // seconds until URL expires
-  string display_url = 4;     // permanent CDN URL for display (empty if no CDN configured)
+  // Seconds until the presigned URL expires.
+  int64 expires_in = 3;
+  // Permanent CDN URL for display (empty if no CDN is configured or purpose
+  // is ATTACHMENT).
+  string display_url = 4;
 }
 
 message ConfirmUploadRequest {
+  // UUID of the media object being confirmed.
   string media_id = 1;
+  // Actual byte size uploaded. Must match the file_size from GetUploadUrlRequest.
   int64 file_size = 2;
 }
 
 message ConfirmUploadResponse {
+  // Confirmed media object UUID.
   string media_id = 1;
 }

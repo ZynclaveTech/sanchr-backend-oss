@@ -57,7 +57,27 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("failed to initialize ScyllaDB session: {error}"))?;
     tracing::info!("scylla session created");
 
-    let nats = async_nats::connect(&config.database.nats.url).await?;
+    let nats = {
+        let nats_cfg = &config.database.nats;
+        match (&nats_cfg.username, &nats_cfg.password) {
+            (Some(user), Some(pass)) => {
+                async_nats::ConnectOptions::with_user_and_password(user.clone(), pass.clone())
+                    .connect(&nats_cfg.url)
+                    .await?
+            }
+            _ => {
+                if !config.auth.dev_mode {
+                    tracing::warn!(
+                        "NATS credentials not configured; connecting without authentication. \
+                         Set database.nats.username and database.nats.password for production."
+                    );
+                }
+                async_nats::ConnectOptions::new()
+                    .connect(&nats_cfg.url)
+                    .await?
+            }
+        }
+    };
     tracing::info!("nats client connected");
 
     let jwt = sanchr_server_crypto::jwt::JwtManager::new(config.auth.jwt_secret.as_bytes());
@@ -79,7 +99,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(%grpc_addr, "gRPC call server listening");
 
     Server::builder()
-        .add_service(CallSignalingServiceServer::new(call_service))
+        .add_service(
+            CallSignalingServiceServer::new(call_service).max_decoding_message_size(65_536), // 64 KB — call signaling messages are small
+        )
         .serve(grpc_addr)
         .await?;
 

@@ -1,33 +1,64 @@
 syntax = "proto3";
 package sanchr.notifications;
 
+// NotificationService manages push notification tokens and per-user and
+// per-conversation notification preferences. All RPCs require a valid
+// Bearer token in the `authorization` metadata header.
 service NotificationService {
+  // RegisterPushToken registers or updates the device's push notification
+  // token. Called on app startup and whenever the OS rotates the token.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (empty token or unsupported platform).
   rpc RegisterPushToken(RegisterPushTokenRequest) returns (RegisterPushTokenResponse);
+
+  // UpdateNotificationPrefs updates the user's global notification
+  // preferences (message, group, call toggles, sound, vibration, preview).
+  //
+  // Auth: Bearer token required.
   rpc UpdateNotificationPrefs(UpdateNotificationPrefsRequest) returns (UpdateNotificationPrefsResponse);
+
+  // SetConversationNotificationPrefs mutes or unmutes push notifications
+  // for a specific conversation.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown conversation_id).
   rpc SetConversationNotificationPrefs(SetConversationNotificationPrefsRequest) returns (SetConversationNotificationPrefsResponse);
 }
 
 message RegisterPushTokenRequest {
+  // Platform-specific push token (APNs device token or FCM registration token).
   string token = 1;
-  string platform = 2;        // "ios" or "android"
-  string voip_token = 3;      // VoIP PushKit token (iOS only; empty on other platforms)
+  // Platform identifier: "ios" or "android".
+  string platform = 2;
+  // VoIP PushKit token (iOS only; empty on other platforms).
+  string voip_token = 3;
 }
 
 message RegisterPushTokenResponse {}
 
+// UpdateNotificationPrefsRequest sets global notification toggles.
 message UpdateNotificationPrefsRequest {
+  // Enable direct message notifications.
   bool message_notifications = 1;
+  // Enable group message notifications.
   bool group_notifications = 2;
+  // Enable incoming call notifications.
   bool call_notifications = 3;
+  // Notification sound name (platform-specific).
   string notification_sound = 4;
+  // Enable vibration on notification.
   bool vibrate = 5;
+  // Show message preview in the notification banner.
   bool show_preview = 6;
 }
 
 message UpdateNotificationPrefsResponse {}
 
 message SetConversationNotificationPrefsRequest {
+  // UUID of the conversation to mute/unmute.
   string conversation_id = 1;
+  // True to mute, false to unmute.
   bool muted = 2;
 }
 

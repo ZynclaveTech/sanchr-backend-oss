@@ -1,117 +1,216 @@
 syntax = "proto3";
 package sanchr.backup_payload;
 
+// BackupInfo is the first frame in a backup archive. Contains metadata about
+// the backup's origin and content summary.
 message BackupInfo {
+  // Backup format version for forward compatibility.
   int32 format_version = 1;
+  // Unix timestamp (milliseconds) when the backup was exported.
   int64 exported_at_ms = 2;
+  // Originating platform: "ios", "android", or "web".
   string platform = 3;
+  // Client app version string.
   string app_version = 4;
+  // Total number of contacts in this backup.
   int64 contact_count = 5;
+  // Total number of conversations in this backup.
   int64 conversation_count = 6;
+  // Total number of messages in this backup.
   int64 message_count = 7;
+  // Total number of vault items in this backup.
   int64 vault_item_count = 8;
 }
 
+// BackupMediaPayload describes a media attachment within a backup.
 message BackupMediaPayload {
+  // URL to the encrypted media blob.
   string url = 1;
+  // URL to the encrypted thumbnail.
   string thumbnail_url = 2;
+  // AES-256-GCM encryption key for the media blob.
   bytes encryption_key = 3;
+  // AES-256-GCM initialization vector.
   bytes encryption_iv = 4;
+  // MIME type (e.g., "image/jpeg", "video/mp4").
   string mime_type = 5;
+  // Size of the encrypted blob in bytes.
   int64 size_bytes = 6;
+  // User-provided caption text.
   string caption = 7;
+  // Image/video width in pixels.
   int32 width = 8;
+  // Image/video height in pixels.
   int32 height = 9;
+  // Duration in milliseconds (0 for images).
   int64 duration_ms = 10;
+  // Original file name.
   string file_name = 11;
 }
 
+// BackupLocationPayload describes a shared location within a backup.
 message BackupLocationPayload {
+  // Latitude in decimal degrees.
   double latitude = 1;
+  // Longitude in decimal degrees.
   double longitude = 2;
+  // Human-readable location label.
   string label = 3;
 }
 
+// BackupContactPayload is a lightweight contact reference within a message.
 message BackupContactPayload {
+  // Contact display name.
   string name = 1;
+  // E.164 formatted phone number.
   string phone_number = 2;
 }
 
+// BackupContactRecord represents a full contact entry in a backup.
 message BackupContactRecord {
+  // Contact record UUID.
   string id = 1;
+  // User UUID (empty if not a registered Sanchr user).
   string user_id = 2;
+  // E.164 formatted phone number.
   string phone_number = 3;
+  // Display name.
   string display_name = 4;
+  // Avatar URL.
   string avatar_url = 5;
+  // Bio/about text.
   string bio = 6;
+  // Whether the contact's identity key has been verified.
   bool is_verified = 7;
+  // Unix timestamp (milliseconds) of last seen time.
   int64 last_seen_ms = 8;
+  // Status text.
   string status = 9;
+  // Whether this is the local user's own contact record.
   bool is_local_user = 10;
+  // Whether this contact is a registered Sanchr user.
   bool is_registered = 11;
+  // Whether this contact is blocked.
   bool is_blocked = 12;
+  // Whether this contact is a favorite.
   bool is_favorite = 13;
+  // Unix timestamp (milliseconds) of last contact sync.
   int64 last_synced_at_ms = 14;
 }
 
+// BackupConversationRecord represents a conversation in a backup.
 message BackupConversationRecord {
+  // Conversation UUID.
   string id = 1;
+  // Conversation type: "direct" or "group".
   string type = 2;
+  // Group conversation title (empty for direct conversations).
   string title = 3;
+  // Group avatar URL.
   string avatar_url = 4;
+  // UUIDs of all participants.
   repeated string participant_ids = 5;
+  // UUID of the last message.
   string last_message_id = 6;
+  // Preview text of the last message.
   string last_message_preview = 7;
+  // Unix timestamp (milliseconds) of the last message.
   int64 last_message_timestamp_ms = 8;
+  // UUID of the last message sender.
   string last_message_sender_id = 9;
+  // Delivery status of the last message.
   string last_message_status = 10;
+  // Content type of the last message.
   string last_message_content_type = 11;
+  // Content body of the last message.
   string last_message_content_body = 12;
+  // Number of unread messages.
   int32 unread_count = 13;
+  // Whether the conversation is pinned.
   bool is_pinned = 14;
+  // Whether the conversation is muted.
   bool is_muted = 15;
+  // Whether the conversation is archived.
   bool is_archived = 16;
+  // Disappearing message duration in milliseconds (0 = disabled).
   int64 disappearing_duration_ms = 17;
+  // Unix timestamp (milliseconds) of conversation creation.
   int64 created_at_ms = 18;
+  // Unix timestamp (milliseconds) of last update.
   int64 updated_at_ms = 19;
 }
 
+// BackupMessageRecord represents a single message in a backup.
 message BackupMessageRecord {
+  // Message UUID.
   string id = 1;
+  // UUID of the containing conversation.
   string conversation_id = 2;
+  // UUID of the sender.
   string sender_id = 3;
+  // Unix timestamp (milliseconds) of the message.
   int64 timestamp_ms = 4;
+  // Content type (e.g., "text", "media", "location").
   string content_type = 5;
+  // Decrypted message body.
   string content_body = 6;
+  // Short preview text.
   string preview_text = 7;
+  // Delivery status: "sent", "delivered", "read".
   string status = 8;
+  // Whether this message was sent by the local user.
   bool is_outgoing = 9;
+  // UUID of the message being replied to, or empty.
   string reply_to_message_id = 10;
+  // Unix timestamp (milliseconds) when the message expires (0 = no expiry).
   int64 expires_at_ms = 11;
+  // Whether this message has been deleted.
   bool is_deleted = 12;
 }
 
+// BackupVaultItemRecord represents a vault item in a backup.
 message BackupVaultItemRecord {
+  // Vault item UUID.
   string id = 1;
+  // Item name/title.
   string name = 2;
+  // Item type (e.g., "photo", "video", "document").
   string type = 3;
+  // File size in bytes.
   int64 size_bytes = 4;
+  // AES-256-GCM encryption key.
   bytes encryption_key = 5;
+  // AES-256-GCM initialization vector.
   bytes encryption_iv = 6;
+  // URL to the encrypted thumbnail.
   string encrypted_thumbnail_url = 7;
+  // Unix timestamp (milliseconds) of creation.
   int64 created_at_ms = 8;
+  // Unix timestamp (milliseconds) of last update.
   int64 updated_at_ms = 9;
+  // Whether the item is cached locally on the device.
   bool is_cached_locally = 10;
+  // Remote storage URL for the encrypted blob.
   string remote_url = 11;
+  // Local file path (device-specific, not portable).
   string local_url = 12;
 }
 
+// BackupFrame is a tagged union representing a single record in a backup
+// archive. The backup is a stream of BackupFrame messages, starting with
+// a BackupInfo frame followed by contacts, conversations, messages, and
+// vault items.
 message BackupFrame {
   oneof frame {
+    // Backup metadata header (always the first frame).
     BackupInfo info = 1;
+    // A contact record.
     BackupContactRecord contact = 2;
+    // A conversation record.
     BackupConversationRecord conversation = 3;
+    // A message record.
     BackupMessageRecord message = 4;
+    // A vault item record.
     BackupVaultItemRecord vault_item = 5;
   }
 }

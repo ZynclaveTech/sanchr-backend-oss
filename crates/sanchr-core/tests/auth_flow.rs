@@ -11,10 +11,16 @@ async fn register_creates_pending_registration_and_no_verified_user() {
     let phone = common::unique_phone();
     let name = common::unique_name();
 
-    let result =
-        sanchr_core::auth::handlers::handle_register(&state, &phone, &name, "Password123!", None)
-            .await
-            .expect("registration should succeed");
+    let result = sanchr_core::auth::handlers::handle_register(
+        &state,
+        &phone,
+        &name,
+        "Password123!",
+        None,
+        None,
+    )
+    .await
+    .expect("registration should succeed");
 
     assert!(result.user.is_none());
     assert!(
@@ -35,7 +41,7 @@ async fn register_then_verify_otp_returns_tokens_and_creates_verified_user() {
     let phone = common::unique_phone();
     let name = common::unique_name();
 
-    sanchr_core::auth::handlers::handle_register(&state, &phone, &name, "Password123!", None)
+    sanchr_core::auth::handlers::handle_register(&state, &phone, &name, "Password123!", None, None)
         .await
         .expect("registration failed");
 
@@ -192,6 +198,7 @@ async fn duplicate_registration_for_verified_user_returns_generic_response() {
         &phone,
         "Second",
         "Password456!",
+        None,
         None,
     )
     .await

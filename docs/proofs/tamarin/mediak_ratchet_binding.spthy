@@ -1,0 +1,188 @@
+/*
+ * Media Key Ratchet Binding: Forward Secrecy
+ *
+ * Models the parallel HKDF-based media key derivation chain used in
+ * Sanchr alongside the Signal double ratchet.  Proves that compromise
+ * of a future chain key CK_{n+1} does not reveal any media key
+ * MediaK_m for m <= n  (forward secrecy).
+ *
+ * Chain structure:
+ *   CK_0            (initial chain key, from Signal ratchet)
+ *   CK_{n+1}  = HKDF(CK_n, "advance")
+ *   MediaK_n  = HKDF(CK_n, file_hash, "media-v1")
+ *
+ * HKDF is modeled as a random oracle (Tamarin's built-in hash / kdf).
+ *
+ * Run:  tamarin-prover --prove mediak_ratchet_binding.spthy
+ */
+
+theory MediaK_Ratchet_Binding
+begin
+
+builtins: hashing
+
+/*
+ * We model HKDF as two distinct function symbols to separate chain
+ * advancement from media-key derivation.  Both are treated as
+ * uninterpreted (random-oracle-like) functions by Tamarin.
+ *
+ *   advance(ck)           models HKDF(ck, "advance")
+ *   derive_media(ck, fh)  models HKDF(ck, file_hash, "media-v1")
+ */
+functions: advance/1, derive_media/2
+
+
+// =========================================================================
+// Chain initialization
+// =========================================================================
+
+/*
+ * Init_Chain:
+ *   A fresh chain key CK_0 is generated (e.g., output of a Signal
+ *   ratchet step).  The chain is associated with a session identifier.
+ */
+rule Init_Chain:
+    [ Fr(~ck0), Fr(~sess) ]
+  --[ ChainInitialized(~sess, ~ck0),
+      ChainKeyAt(~sess, ~ck0, '0') ]->
+    [ ChainState(~sess, ~ck0, '0') ]
+
+
+// =========================================================================
+// Chain advancement
+// =========================================================================
+
+/*
+ * Advance_Chain:
+ *   CK_{n+1} = advance(CK_n).  The old chain key is consumed, ensuring
+ *   it is no longer available in the state (essential for forward
+ *   secrecy -- the state does not accumulate old keys).
+ */
+rule Advance_Chain:
+    [ ChainState(~sess, ck_n, n) ]
+  --[ ChainAdvanced(~sess, ck_n, advance(ck_n)),
+      ChainKeyAt(~sess, advance(ck_n), 'succ') ]->
+    [ ChainState(~sess, advance(ck_n), 'succ') ]
+
+
+// =========================================================================
+// Media key derivation
+// =========================================================================
+
+/*
+ * Derive_Media_Key:
+ *   MediaK_n = derive_media(CK_n, file_hash).  The chain key is NOT
+ *   consumed here -- derivation is a read from the current state.
+ *   A separate Advance_Chain step moves the chain forward afterward.
+ */
+rule Derive_Media_Key:
+    [ ChainState(~sess, ck_n, n), Fr(~file_hash) ]
+  --[ MediaKeyDerived(~sess, ck_n, derive_media(ck_n, ~file_hash), ~file_hash) ]->
+    [ ChainState(~sess, ck_n, n),
+      MediaKeyOut(~sess, derive_media(ck_n, ~file_hash)) ]
+
+
+// =========================================================================
+// Adversary compromise
+// =========================================================================
+
+/*
+ * Compromise_Future_Key:
+ *   The adversary obtains a chain key from the current state.  This
+ *   models post-compromise: the adversary learns CK_{n+1} (or any
+ *   current chain key).  Because ChainState is consumed, the
+ *   adversary gets exactly one snapshot.
+ */
+rule Compromise_Future_Key:
+    [ ChainState(~sess, ck, n) ]
+  --[ Compromised(~sess, ck) ]->
+    [ Out(ck) ]
+
+/*
+ * Adversary_Derive_Media_From_Known_CK:
+ *   If the adversary knows a chain key, they can compute media keys
+ *   from it (HKDF is a public function).  This is expected: compromise
+ *   of CK_n reveals MediaK_n.  The forward secrecy claim is about
+ *   PRIOR keys only.
+ */
+rule Adversary_Derive_Media_From_Known_CK:
+    [ In(ck), In(fh) ]
+  -->
+    [ Out(derive_media(ck, fh)) ]
+
+/*
+ * Adversary_Advance_From_Known_CK:
+ *   If the adversary knows CK_n they can compute CK_{n+1}, CK_{n+2},
+ *   etc.  Forward secrecy guarantees they CANNOT go backward.
+ */
+rule Adversary_Advance_From_Known_CK:
+    [ In(ck) ]
+  -->
+    [ Out(advance(ck)) ]
+
+
+// =========================================================================
+// Security lemmas
+// =========================================================================
+
+/*
+ * media_key_forward_secrecy:
+ *   If the adversary compromises a chain key ck_next that was produced
+ *   by advancing from some prior key ck_prev, and a media key was
+ *   previously derived from ck_prev, then the adversary does not learn
+ *   that media key.
+ *
+ *   Formally: if Compromised(ck_next) and ck_next = advance(ck_prev)
+ *   and MediaKeyDerived(ck_prev, mk, fh) happened before the
+ *   compromise, then mk is not in the adversary's knowledge.
+ *
+ *   This holds because advance() is a one-way function in the symbolic
+ *   model (no inverse), so ck_prev cannot be recovered from ck_next.
+ */
+lemma media_key_forward_secrecy:
+  "All sess ck_prev ck_next mk fh #i #j #a.
+    Compromised(sess, ck_next) @i &
+    ChainAdvanced(sess, ck_prev, ck_next) @a &
+    MediaKeyDerived(sess, ck_prev, mk, fh) @j &
+    j < i
+    ==> not(Ex #k. K(mk) @k)"
+
+/*
+ * chain_key_secrecy_before_compromise:
+ *   A chain key that was consumed (advanced past) before any compromise
+ *   remains secret.
+ */
+lemma chain_key_secrecy_before_compromise:
+  "All sess ck_prev ck_next #a #i.
+    ChainAdvanced(sess, ck_prev, ck_next) @a &
+    Compromised(sess, ck_next) @i &
+    a < i
+    ==> not(Ex #k. K(ck_prev) @k)"
+
+/*
+ * compromise_reveals_current_media_key (sanity / expected):
+ *   If the adversary compromises CK_n and knows the file hash, they
+ *   CAN derive MediaK_n.  This is NOT a vulnerability -- it is the
+ *   expected consequence of compromise.  The lemma is expected to be
+ *   FALSIFIED (attack found), confirming the model is not vacuous.
+ */
+lemma compromise_reveals_current_media_key:
+  "All sess ck mk fh #i #j.
+    Compromised(sess, ck) @i &
+    MediaKeyDerived(sess, ck, mk, fh) @j
+    ==> not(Ex #k. K(mk) @k)"
+
+/*
+ * chain_functional_correctness (sanity):
+ *   There exists a trace where a chain is initialized, advanced, and a
+ *   media key is derived.
+ */
+lemma chain_functional_correctness:
+  exists-trace
+  "Ex sess ck0 ck1 mk fh #i #j #k.
+    ChainInitialized(sess, ck0) @i &
+    ChainAdvanced(sess, ck0, ck1) @j &
+    MediaKeyDerived(sess, ck0, mk, fh) @k &
+    i < j & i < k"
+
+end

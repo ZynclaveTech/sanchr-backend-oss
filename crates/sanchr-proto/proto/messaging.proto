@@ -1,122 +1,280 @@
 syntax = "proto3";
 package sanchr.messaging;
 
+// MessagingService provides end-to-end encrypted messaging, real-time event
+// streaming, sealed-sender delivery, and conversation management. All RPCs
+// require a valid Bearer token in the `authorization` metadata header unless
+// noted otherwise.
 service MessagingService {
+  // SendMessage delivers an end-to-end encrypted message to all devices in a
+  // conversation. The client encrypts separately for each recipient device
+  // using Signal Protocol sessions.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown conversation), INVALID_ARGUMENT (empty
+  //   device_messages), PERMISSION_DENIED (not a conversation participant).
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // StartDirectConversation creates or returns the existing 1:1 conversation
+  // with the specified recipient.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown recipient), PERMISSION_DENIED (blocked).
   rpc StartDirectConversation(StartDirectConversationRequest) returns (Conversation);
+
+  // MessageStream is the primary bidirectional streaming RPC. The client
+  // sends typing indicators and call event acks; the server pushes encrypted
+  // messages, receipts, call events, reactions, and pre-key warnings.
+  // The stream stays open for the lifetime of the client session.
+  //
+  // Auth: Bearer token required (validated once at stream open).
+  // Errors: UNAUTHENTICATED (invalid token at connect time).
   rpc MessageStream(stream ClientEvent) returns (stream ServerEvent);
+
+  // SyncMessages returns all unacknowledged encrypted envelopes queued since
+  // the given timestamp. Used on reconnect or cold start.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (future timestamp).
   rpc SyncMessages(SyncRequest) returns (stream EncryptedEnvelope);
+
+  // AckMessages acknowledges receipt of one or more messages so the server
+  // can remove them from the delivery queue.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (empty list).
   rpc AckMessages(AckMessagesRequest) returns (AckMessagesResponse);
+
+  // DeleteMessage removes a message from the server. The sender can delete
+  // their own messages; recipients can delete for themselves only.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown message), PERMISSION_DENIED (not sender/participant).
   rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
+
+  // EditMessage replaces the ciphertext of a previously sent message. Only
+  // the original sender may edit. Generates a MessageEdited server event for
+  // all other participants.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown message), PERMISSION_DENIED (not the sender).
   rpc EditMessage(EditMessageRequest) returns (EditMessageResponse);
+
+  // SendReceipt reports a delivery or read receipt for a message. Receipts
+  // are forwarded to the sender via their MessageStream.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown message).
   rpc SendReceipt(ReceiptRequest) returns (ReceiptResponse);
+
+  // GetConversations returns all conversations the authenticated user
+  // participates in, including unread counts and participant metadata.
+  //
+  // Auth: Bearer token required.
   rpc GetConversations(GetConversationsRequest) returns (GetConversationsResponse);
+
+  // SendReaction adds or removes an emoji reaction on a message. Broadcast
+  // to all conversation participants via MessageStream.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown message), PERMISSION_DENIED (not a participant).
   rpc SendReaction(Reaction) returns (Reaction);
+
+  // GetSenderCertificate returns a short-lived signed certificate that
+  // attests the caller's identity. Used for sealed-sender message encryption.
+  //
+  // Auth: Bearer token required.
   rpc GetSenderCertificate(SenderCertificateRequest) returns (SenderCertificateResponse);
+
+  // GetDeliveryTokens returns a batch of opaque delivery tokens that a sender
+  // can attach to sealed-sender messages for server-side routing without
+  // revealing the sender's identity.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (count < 1 or > 100).
   rpc GetDeliveryTokens(DeliveryTokenRequest) returns (DeliveryTokenResponse);
+
+  // SendSealedMessage delivers a sealed-sender encrypted message. The server
+  // routes the message using the opaque delivery token without learning the
+  // sender's identity.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (invalid delivery token or empty device_messages).
   rpc SendSealedMessage(SendSealedMessageRequest) returns (SendSealedMessageResponse);
+
+  // DeleteConversation removes a conversation and all its messages for the
+  // authenticated user. Other participants are unaffected.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown conversation).
   rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
 }
 
 message StartDirectConversationRequest {
+  // UUID of the user to start a conversation with.
   string recipient_id = 1;
 }
 
+// DeviceMessage holds the ciphertext encrypted for a specific recipient device.
 message DeviceMessage {
+  // UUID of the recipient user.
   string recipient_id = 1;
+  // Numeric device identifier within the recipient's device set.
   int32 device_id = 2;
+  // Signal Protocol ciphertext (PreKeySignalMessage or SignalMessage).
   bytes ciphertext = 3;
 }
 
 message SendMessageRequest {
+  // UUID of the target conversation.
   string conversation_id = 1;
+  // One entry per recipient device. The server fans out each entry to the
+  // corresponding device's delivery queue.
   repeated DeviceMessage device_messages = 2;
+  // Application-level content type (e.g., "text", "media", "location").
   string content_type = 3;
+  // Disappearing message TTL in seconds. Zero means the message persists
+  // indefinitely.
   int64 expires_after_secs = 4;
 }
 
 message SendMessageResponse {
+  // Server-assigned message UUID.
   string message_id = 1;
+  // Server-stamped Unix timestamp (milliseconds).
   int64 server_timestamp = 2;
 }
 
+// ClientEvent is sent by the client over the MessageStream bidirectional RPC.
 message ClientEvent {
   oneof event {
+    // Typing indicator update.
     TypingIndicator typing = 1;
-    // field 2 reserved — formerly ReceiptRequest (removed: sealed receipts)
-    // field 3 reserved — formerly PresenceHeartbeat (removed: P2P presence)
+    // field 2 reserved -- formerly ReceiptRequest (removed: sealed receipts)
+    // field 3 reserved -- formerly PresenceHeartbeat (removed: P2P presence)
+    // Acknowledgement of a received call event.
     CallEventAck call_event_ack = 4;
   }
 }
 
+// ServerEvent is pushed by the server over the MessageStream bidirectional RPC.
 message ServerEvent {
   oneof event {
+    // An end-to-end encrypted message envelope.
     EncryptedEnvelope message = 1;
+    // A typing indicator from another participant.
     TypingIndicator typing = 2;
+    // A delivery/read receipt update.
     ReceiptUpdate receipt = 3;
-    // field 4 reserved — formerly PresenceUpdate (removed: P2P presence)
+    // field 4 reserved -- formerly PresenceUpdate (removed: P2P presence)
+    // Warning that the device's one-time pre-key supply is running low.
     PreKeyCountLow pre_key_count_low = 5;
+    // Incoming call offer from another user.
     CallOfferEvent call_offer = 6;
+    // Call lifecycle event (ringing, accepted, ended, etc.).
     CallLifecycleEvent call_lifecycle = 7;
+    // Emoji reaction added or removed.
     Reaction reaction = 8;
+    // Sealed-sender inbound message (sender identity inside the sealed envelope).
     SealedInboundMessage sealed_message = 9;
+    // Notification that a message was edited by its sender.
     MessageEdited message_edited = 10;
   }
 }
 
+// CallOfferEvent is pushed via ServerEvent when an incoming call arrives.
 message CallOfferEvent {
+  // Server-assigned call UUID.
   string call_id = 1;
+  // UUID of the calling user.
   string caller_id = 2;
+  // Call type: "voice" or "video".
   string call_type = 3;
+  // SDP offer payload (cleartext, legacy path). Empty when encrypted_sdp_payload is set.
   bytes sdp_offer = 4;
+  // SRTP key parameters (cleartext, legacy path). Empty when encrypted_sdp_payload is set.
   bytes srtp_key_params = 5;
-  bytes encrypted_sdp_payload = 6;  // Signal-encrypt(SealedCallPayload JSON)
+  // Signal-encrypted SDP payload (SealedCallPayload JSON). Used for sealed-sender calls.
+  bytes encrypted_sdp_payload = 6;
 }
 
+// CallLifecycleEvent notifies participants of call state transitions.
 message CallLifecycleEvent {
+  // Call UUID.
   string call_id = 1;
+  // UUID of the remote peer.
   string peer_id = 2;
+  // Event type: "ringing", "accepted", "declined", "busy", "ended", "missed".
   string event_type = 3;
+  // UUID of the user who triggered this event.
   string actor_id = 4;
 }
 
+// CallEventAck acknowledges receipt of a call event over the MessageStream.
 message CallEventAck {
+  // Call UUID being acknowledged.
   string call_id = 1;
-  string kind = 2; // "offer" or "lifecycle"
+  // Kind of event being acknowledged: "offer" or "lifecycle".
+  string kind = 2;
 }
 
+// EncryptedEnvelope wraps a Signal Protocol ciphertext for delivery to a
+// specific device.
 message EncryptedEnvelope {
+  // UUID of the conversation.
   string conversation_id = 1;
+  // Server-assigned message UUID.
   string message_id = 2;
+  // UUID of the sending user.
   string sender_id = 3;
+  // Numeric device identifier of the sending device.
   int32 sender_device = 4;
+  // Signal Protocol ciphertext.
   bytes ciphertext = 5;
+  // Application-level content type (e.g., "text", "media").
   string content_type = 6;
+  // Server-stamped Unix timestamp (milliseconds).
   int64 server_timestamp = 7;
 }
 
+// TypingIndicator signals that a user is actively composing a message.
 message TypingIndicator {
+  // UUID of the conversation.
   string conversation_id = 1;
+  // UUID of the typing user.
   string user_id = 2;
+  // True when the user is typing; false when they stop.
   bool is_typing = 3;
 }
 
+// ReceiptRequest reports a delivery or read receipt to the server.
 message ReceiptRequest {
+  // UUID of the conversation containing the message.
   string conversation_id = 1;
+  // UUID of the message being receipted.
   string message_id = 2;
+  // Receipt status: "delivered" or "read".
   string status = 3;
 }
 
 message ReceiptResponse {}
 
+// ReceiptUpdate is pushed via ServerEvent to inform the sender that their
+// message was delivered or read.
 message ReceiptUpdate {
+  // UUID of the conversation.
   string conversation_id = 1;
+  // UUID of the receipted message.
   string message_id = 2;
+  // UUID of the recipient who generated this receipt.
   string recipient_id = 3;
+  // Receipt status: "delivered" or "read".
   string status = 4;
+  // Unix timestamp (milliseconds) when the receipt was generated.
   int64 timestamp = 5;
 }
 
+// PresenceStatus indicates the user's online visibility preference.
 enum PresenceStatus {
   PRESENCE_STATUS_UNSPECIFIED = 0;
   ONLINE = 1;
@@ -124,6 +282,7 @@ enum PresenceStatus {
   HIDDEN = 3;
 }
 
+// DevicePresenceState indicates the foreground/background state of a device.
 enum DevicePresenceState {
   DEVICE_STATE_UNSPECIFIED = 0;
   FOREGROUND = 1;
@@ -131,11 +290,14 @@ enum DevicePresenceState {
   OFFLINE_DEVICE = 3;
 }
 
+// PresenceHeartbeat was used for P2P presence. Retained for wire compatibility.
 message PresenceHeartbeat {
   DevicePresenceState device_state = 1;
+  // Client-local timestamp (milliseconds since epoch).
   int64 sent_at_ms = 2;
 }
 
+// PresenceUpdate was used for P2P presence. Retained for wire compatibility.
 message PresenceUpdate {
   string user_id = 1;
   string status = 2;
@@ -143,38 +305,53 @@ message PresenceUpdate {
   PresenceStatus status_code = 4;
 }
 
+// PreKeyCountLow warns the client that its one-time pre-key supply on the
+// server is running low and new keys should be uploaded.
 message PreKeyCountLow {
+  // Device that is running low on pre-keys.
   int32 device_id = 1;
+  // Number of remaining one-time pre-keys on the server.
   int32 remaining_count = 2;
 }
 
+// SyncRequest retrieves all queued messages since the given timestamp.
 message SyncRequest {
+  // Unix timestamp (milliseconds). Messages with server_timestamp > this
+  // value are returned.
   int64 since_timestamp = 1;
 }
 
+// AckedMessageRef identifies a single message to acknowledge.
 message AckedMessageRef {
+  // UUID of the conversation.
   string conversation_id = 1;
+  // UUID of the message.
   string message_id = 2;
 }
 
 message AckMessagesRequest {
+  // List of messages to acknowledge as received.
   repeated AckedMessageRef messages = 1;
 }
 
 message AckMessagesResponse {}
 
 message DeleteMessageRequest {
+  // UUID of the conversation containing the message.
   string conversation_id = 1;
+  // UUID of the message to delete.
   string message_id = 2;
 }
 
 message DeleteMessageResponse {}
 
 message EditMessageRequest {
+  // UUID of the conversation containing the message.
   string conversation_id = 1;
+  // UUID of the message to edit.
   string message_id = 2;
-  // Re-encrypted ciphertext for each recipient device.  Same semantics as
-  // SendMessageRequest.device_messages — one entry per target device.
+  // Re-encrypted ciphertext for each recipient device. Same semantics as
+  // SendMessageRequest.device_messages -- one entry per target device.
   repeated DeviceMessage device_messages = 3;
 }
 
@@ -183,16 +360,20 @@ message EditMessageResponse {
   int64 edited_at = 1;
 }
 
-// Broadcast to all conversation participants (except the editor) when a
-// message is edited.  Each recipient gets the ciphertext encrypted for their
-// specific device.
+// MessageEdited is broadcast to all conversation participants (except the
+// editor) when a message is edited. Each recipient gets the ciphertext
+// encrypted for their specific device.
 message MessageEdited {
+  // UUID of the conversation.
   string conversation_id = 1;
+  // UUID of the edited message.
   string message_id = 2;
+  // UUID of the user who performed the edit.
   string sender_id = 3;
-  // Per-device ciphertext — each ServerEvent carrying this message targets a
+  // Per-device ciphertext -- each ServerEvent carrying this message targets a
   // single device and contains that device's ciphertext.
   bytes ciphertext = 4;
+  // Server-stamped edit timestamp (milliseconds since epoch).
   int64 edited_at = 5;
 }
 
@@ -202,73 +383,112 @@ message GetConversationsResponse {
   repeated Conversation conversations = 1;
 }
 
+// Conversation represents a messaging thread (1:1 or group).
 message Conversation {
+  // Server-assigned conversation UUID.
   string id = 1;
+  // Conversation type: "direct" or "group".
   string type = 2;
+  // UUIDs of all participants.
   repeated string participant_ids = 3;
+  // Number of unread messages for the authenticated user.
   int32 unread_count = 4;
+  // Participant profile summaries.
   repeated Participant participants = 5;
 }
 
+// Participant is a lightweight user profile within a conversation.
 message Participant {
+  // User UUID.
   string user_id = 1;
+  // Display name.
   string display_name = 2;
+  // Avatar URL, or empty.
   string avatar_url = 3;
 }
 
+// Reaction represents an emoji reaction on a message.
 message Reaction {
+  // UUID of the message being reacted to.
   string message_id = 1;
+  // UUID of the conversation containing the message.
   string conversation_id = 2;
+  // UUID of the user who reacted.
   string user_id = 3;
+  // The emoji character (e.g., "thumbs_up").
   string emoji = 4;
+  // True if this event removes a previous reaction.
   bool removed = 5;
+  // Server-stamped Unix timestamp (milliseconds).
   int64 timestamp = 6;
 }
 
+// SenderCertificateRequest requests a short-lived sender identity certificate
+// for sealed-sender messaging.
 message SenderCertificateRequest {}
 
 message SenderCertificateResponse {
+  // Serialized SenderCertificate protobuf, signed by the server.
   bytes certificate = 1;
+  // Unix timestamp (seconds) when the certificate expires.
   int64 expiration = 2;
 }
 
+// DeliveryTokenRequest requests opaque routing tokens for sealed-sender delivery.
 message DeliveryTokenRequest {
+  // Number of tokens to generate. Range: 1..100.
   int32 count = 1;
 }
 
 message DeliveryTokenResponse {
+  // Opaque delivery tokens. Each token can be used once.
   repeated bytes tokens = 1;
 }
 
+// SendSealedMessageRequest delivers a message using sealed-sender encryption.
+// The server uses the delivery_token for routing without learning the sender.
 message SendSealedMessageRequest {
+  // Opaque delivery token obtained from GetDeliveryTokens.
   bytes delivery_token = 1;
+  // One sealed envelope per recipient device.
   repeated SealedDeviceMessage device_messages = 2;
 }
 
+// SealedDeviceMessage wraps a sealed-sender envelope for a single device.
 message SealedDeviceMessage {
+  // UUID of the recipient user.
   string recipient_id = 1;
+  // Numeric device identifier within the recipient's device set.
   int32 device_id = 2;
+  // Sealed-sender encrypted envelope (contains sender identity inside).
   bytes sealed_envelope = 3;
-  // Optional cleartext routing metadata. It lets the server honor
-  // per-device conversation notification mutes before sending silent APNs,
-  // while the sealed envelope remains opaque.
+  // Optional cleartext routing metadata. Lets the server honor per-device
+  // conversation notification mutes before sending silent APNs, while the
+  // sealed envelope remains opaque.
   string conversation_id = 4;
 }
 
 message SendSealedMessageResponse {
+  // Server-stamped Unix timestamp (milliseconds).
   int64 server_timestamp = 1;
 }
 
+// SealedInboundMessage is delivered via ServerEvent for sealed-sender messages.
 message SealedInboundMessage {
+  // Sealed-sender encrypted envelope.
   bytes sealed_envelope = 1;
+  // Server-stamped Unix timestamp (milliseconds).
   int64 server_timestamp = 2;
+  // Server-assigned message UUID for acknowledgement.
   string message_id = 3;
 }
 
 message DeleteConversationRequest {
+  // UUID of the conversation to delete.
   string conversation_id = 1;
 }
 
 message DeleteConversationResponse {
+  // True if the conversation was successfully deleted for this user.
   bool success = 1;
 }

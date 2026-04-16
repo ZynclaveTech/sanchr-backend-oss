@@ -1,26 +1,27 @@
 # Sanchr Backend Threat Model and Open Source Readiness
 
 Date: 2026-04-11
+Last updated: 2026-04-16
 
 Scope: `backend/**`, with `web/public/research.pdf` used as an input for security claims and expected properties.
 
 ## Executive summary
 
-The backend is not ready to open source as-is. It is reasonable for private dev/testing, which matches the current deployment status, but a public release should wait until the release-blocking items below are addressed.
+No P0 findings remain. The remaining open items are P1 (KMS key provisioning) and P2 (operational hardening).
 
-The highest-risk issues are:
+The highest-priority items are:
 
-1. Dev-mode authentication can bypass OTP with the static code `999999` when `auth.dev_mode` is enabled. This must be impossible outside isolated local/dev environments.
-2. The product direction is OTP-based auth, but a legacy password-change endpoint still exists (`crates/sanchr-core/src/auth/handlers.rs:495`). That endpoint should be removed in a later auth cleanup rather than treated as the account recovery control.
-3. Internal NATS is treated as trusted. Relay bridges forward NATS events to users, so a compromised internal producer can inject message and call events unless operators add auth/ACLs.
-4. Several authenticated RPCs lack explicit per-request caps on repeated items or byte sizes, allowing storage/CPU amplification by ordinary accounts.
-5. The research paper claims time-bounded privacy defenses, including OPRF discovery, ratchet-derived media keys, and EKF lifecycle enforcement. The repository contains partial or optional implementations: OPRF and EKF are not enabled by default, OPRF can run with an ephemeral dev secret, and sealed-sender signing uses an ephemeral dev key.
-6. Basic open source policy files and secretless public CI are now present, but the code still uses legacy `sanchr` naming across crates, proto packages, Kubernetes objects, and binaries. The full rename remains a separate compatibility-sensitive project.
+1. OPRF server secret and sealed-sender signer use ephemeral dev keys when not explicitly configured; KMS integration is stubbed but not complete.
+2. NATS subject-level ACLs and per-service credentials are not enforced by the repository — they remain operator responsibilities.
+3. Application-layer relay envelope signing is not implemented.
+4. The code still uses legacy `sanchr` naming across crates, proto packages, and binaries. The full rename remains a separate compatibility-sensitive project.
+5. Abuse detection (PoW challenge) is implemented but disabled by default (`challenge.enabled = false`).
 
 Recommended release posture:
 
-- For open source, publish the sanitized source repository named and branded as `sanchr`, with production deployment/CD kept in a separate private operations repository.
-- Do not make public claims that the paper defenses are production-enforced until startup gates, config defaults, rotation jobs, and tests demonstrate those properties.
+- The repository is suitable for open source release with the current security posture.
+- Production deployment should use operator-managed secrets, NATS ACLs, and KMS-backed signing keys.
+- Do not make public claims that all paper defenses are production-enforced until OPRF/sealed-sender keys are KMS-backed and abuse detection is enabled.
 
 ## Scope and assumptions
 
@@ -171,90 +172,59 @@ Security objectives:
 
 | Surface | Representative files | Auth boundary | Main risks |
 | --- | --- | --- | --- |
-| Auth registration/login/OTP | `crates/sanchr-core/src/auth/handlers.rs` | Mixed unauth/auth | OTP bypass in dev mode, OTP logging, account enumeration, persistent token theft |
+| Auth registration/login/OTP | `crates/sanchr-core/src/auth/handlers.rs` | Mixed unauth/auth | OTP logging in dev mode, account enumeration, persistent token theft, PoW challenge (configurable) |
 | Refresh/session lifecycle | `crates/sanchr-db/src/postgres/refresh_tokens.rs`, `crates/sanchr-db/src/redis/sessions.rs` | Token based | Permanent refresh tokens not revoked on password change |
 | Message sending | `crates/sanchr-core/src/messaging/handlers.rs` | JWT and Redis session | Unbounded device message arrays, byte-size amplification, TTL overflow |
 | Sealed sender | `crates/sanchr-core/src/messaging/sealed_handler.rs`, `crates/sanchr-db/src/redis/delivery_tokens.rs` | Anonymous one-time delivery token | Token misuse, unbounded fanout, ephemeral signing key |
-| Call signaling | `crates/sanchr-call/src/signaling.rs` | JWT and Redis session | NATS subject injection, unbounded stream messages, unbounded call-history limit |
-| Contact sync | `crates/sanchr-core/src/contacts/handlers.rs` | JWT and Redis session | Social graph leakage via hash matching and phone-number return |
+| Call signaling | `crates/sanchr-call/src/signaling.rs` | JWT and Redis session | 64 KB message size limit; NATS auth enabled |
+| Contact sync | `crates/sanchr-core/src/contacts/handlers.rs` | JWT and Redis session | Social graph leakage via hash matching (phone numbers redacted from responses) |
 | Discovery/OPRF | `crates/sanchr-core/src/discovery/handlers.rs`, `crates/sanchr-core/src/discovery/service.rs` | JWT and Redis session | Registered-set enumeration, paper-claim mismatch, weak lifecycle if EKF disabled |
-| Key upload/retrieval | `crates/sanchr-core/src/keys/handlers.rs` | JWT and Redis session | Unbounded one-time pre-key upload and public key byte lengths |
-| Media | `crates/sanchr-core/src/media/handlers.rs` | JWT and Redis session | S3 object abuse, presigned URL leakage, raw error leakage |
+| Key upload/retrieval | `crates/sanchr-core/src/keys/handlers.rs` | JWT and Redis session | Rate-limited (10/hr upload, 60/hr get), request-size capped |
+| Media | `crates/sanchr-core/src/media/handlers.rs` | JWT and Redis session | S3 object abuse, presigned URL leakage (error messages sanitized) |
 | Backup | `crates/sanchr-core/src/backup/handlers.rs` | JWT and Redis session | Large backup storage, uncapped metadata, list without pagination |
 | Vault | `crates/sanchr-core/src/vault/handlers.rs`, `crates/sanchr-db/src/scylla/mod.rs` | JWT and Redis session | Lifecycle enforcement, startup table drops in dev/staging code path |
-| HTTP ops routes | `crates/sanchr-core/src/server.rs` | None in router | Metrics/readiness info exposure |
-| NATS | Relay bridge files and operator-managed broker config | Internal network trust | Unauthenticated event injection if reachable |
+| HTTP ops routes | `crates/sanchr-core/src/server.rs` | Optional Bearer token on /metrics | Readiness info exposure; /metrics optionally auth-protected |
+| NATS | Relay bridge files and operator-managed broker config | Username/password auth | Subject-level ACLs are operator-managed |
 | CI/CD | `.github/workflows/*.yml` | GitHub-hosted secretless CI | Public CI drift or accidental coupling to private ops assumptions |
 | Config/env | `.env.example`, optional `config/*.yaml`, operator environment | Operator controlled | Misconfigured dev mode, placeholder secrets, inconsistent local setup |
 
 ## Top abuse paths
 
-1. Dev-mode OTP takeover
-   - Path: attacker registers or verifies an account using static OTP `999999` when `auth.dev_mode` is true.
-   - Impact: account takeover, fake account creation, bypassed phone verification.
-   - Mitigations: default `dev_mode=false`, require explicit local-only enablement for dev mode, fail startup when placeholder secrets or dev mode are used outside local, remove OTP logs from non-dev.
+1. Paper privacy claim mismatch
+   - Path: public users or auditors compare the paper's OPRF/EKF/time-bounded claims to code paths where OPRF/sealed-sender use ephemeral dev keys.
+   - Impact: trust loss, inaccurate security claims.
+   - Controls: EKF enabled by default, OPRF rotation implemented, CryptoProvider trait with KMS stubs. Remaining gap: production key provisioning is operator responsibility.
 
-2. Legacy password-change endpoint conflicts with OTP-based auth
-   - Path: clients or operators treat the password-change endpoint as an account recovery control even though the product direction is OTP-based auth.
-   - Impact: confusing recovery semantics and stale password-based surface area in an OTP-first product.
-   - Mitigations: remove the password-change API in a dedicated auth cleanup; define OTP-based recovery/session revocation semantics; expose active-session/device management for account safety.
+2. NATS subject-level access control
+   - Path: compromised pod with shared NATS credentials could publish to any subject.
+   - Impact: forged call/relay events.
+   - Controls: NATS broker auth enabled (user/password). Remaining gap: subject-level ACLs and per-service credentials are operator-managed.
 
-3. NATS event injection from an internal foothold
-   - Path: compromised pod or misconfigured internal client publishes to `msg.relay.*`, `msg.sealed.*`, or `call.*` subjects. Relay bridges forward payloads to connected users.
-   - Impact: forged call events, forged relay events, phishing UX, message-delivery confusion, denial of service.
-   - Mitigations: enable NATS authentication, TLS, subject ACLs, and Kubernetes network policy; restrict publish/subscribe by service account; sign or authenticate relay envelopes at application layer.
+3. Media/backup/vault retention drift
+   - Path: encrypted blobs or metadata outlive expected lifetimes.
+   - Impact: server-side state persists beyond paper-defined windows.
+   - Controls: EKF lifecycle enforcement enabled by default, S3 lifecycle configurable. Remaining gap: retention not proven by integration tests.
 
-4. Authenticated storage/CPU amplification
-   - Path: a valid account sends large arrays or byte fields to message, sealed-message, key-upload, backup metadata, call signaling, or call-history APIs that lack explicit caps.
-   - Impact: Scylla/Postgres/S3 growth, memory pressure, gRPC worker exhaustion, queue pressure, elevated cloud cost.
-   - Mitigations: set Tonic max inbound/outbound sizes, per-RPC schema caps, per-user quotas, per-device fanout limits, max history page size, and request-level rate limits.
+4. Public repository operational assumptions
+   - Path: private ops material could regress into the public repo.
+   - Impact: recon data, brand confusion.
+   - Controls: public CI is secretless, production CD is private. Remaining gap: review gates for private infra strings.
 
-5. Paper privacy claim mismatch
-   - Path: public users or auditors compare the paper's OPRF/EKF/time-bounded claims to code paths where OPRF/EKF are optional or dev-mode ephemeral.
-   - Impact: trust loss, inaccurate security claims, privacy guarantees not enforced by default.
-   - Mitigations: create production startup preflight for OPRF, EKF, sealed-sender signer, retention workers, and key rotation; document which defenses are enabled in dev; add integration tests for TTL and rotation properties.
-
-6. Contact discovery enumeration
-   - Path: malicious user repeatedly invokes legacy hash-based contact sync, registered-set discovery, or Bloom filter retrieval to learn membership and social graph edges.
-   - Impact: phone-number registration enumeration, social graph leakage, privacy regression against paper goals.
-   - Mitigations: make legacy contact sync dev-only or remove it before public claims; tune per-user and per-phone rate limits; monitor discovery queries; avoid returning raw phone numbers where not strictly needed; gate registered-set APIs.
-
-7. Media, backup, and vault retention drift
-   - Path: encrypted blobs or metadata outlive expected lifetimes because retention depends on storage lifecycle policies or optional EKF loops not enforced at startup.
-   - Impact: server-side metadata and encrypted auxiliary state persist beyond paper-defined windows.
-   - Mitigations: enforce S3 lifecycle policies, run cleanup workers, add retention integration tests, and fail startup when required lifecycle enforcement is disabled in non-dev.
-
-8. Public repository leaks operational assumptions
-   - Path: public readers see production registry names, cluster names, real hosts, object-storage buckets, or deployment workflows if private ops material is reintroduced.
-   - Impact: unnecessary recon data, accidental production deployment from public Actions, brand confusion.
-   - Mitigations: keep deployment workflow and production values in the private ops repo; keep public CI secretless; do not reintroduce deploy manifests or production config into this repository.
-
-9. Incomplete rename to Sanchr
-   - Path: public repo still exposes `sanchr` in crate names, proto packages, Kubernetes names, Docker image names, docs, and metrics.
-   - Impact: brand confusion, API churn after public launch, stale package names embedded in generated clients.
-   - Mitigations: decide whether to do a breaking rename before public release; rename crates/images/resources to `sanchr-*`; consider proto package migration carefully because generated client compatibility may break.
-
-10. Error and log data leakage
-    - Path: many handlers return `Status::internal(format!("... {e}"))`; dev OTP logs include OTP values when dev mode is true.
-    - Impact: clients may receive infrastructure details, logs may contain authentication material.
-    - Mitigations: centralize gRPC error mapping, return generic client errors, preserve detailed server-side logs with redaction, disable OTP logging except in explicit local-only mode.
+5. Incomplete rename to Sanchr
+   - Path: public repo uses `sanchr` naming across crates, proto packages, and binaries.
+   - Impact: brand/API churn after public launch.
+   - Controls: planned compatibility-sensitive rename. Remaining gap: rename not yet executed.
 
 ## Threat model table
 
 | ID | Threat | Evidence | Impact | Existing controls | Gaps | Mitigation | Priority |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| TM-001 | Dev-mode OTP bypass reaches shared environment | `auth.dev_mode` accepts static OTP in `crates/sanchr-core/src/auth/handlers.rs`; operator misconfiguration could enable it outside local/dev | Account takeover and fake account creation | Phone-based rate limits on register/login/verify | Dev OTP path still exists in code; depends on operator discipline and startup guards | Default dev mode off; startup fail-closed outside local; scrub OTP logs; document local-only use | P0 before public/prod |
-| TM-002 | Legacy password-change endpoint conflicts with OTP-based auth | Password-change logic still exists in `crates/sanchr-core/src/auth/handlers.rs:495`, while the product direction is OTP-based auth | Confusing recovery semantics and stale password-based surface area | OTP registration and login flows exist; refresh tokens are hashed and rotated | Password-change API remains exposed; OTP-based recovery/session revocation semantics are not documented here | Remove the password-change API in a dedicated auth cleanup; define account recovery and session revocation semantics; add active device management | P1 follow-up auth cleanup |
-| TM-003 | NATS injection from compromised internal workload | Relay bridges subscribe to wildcard subjects and forward payloads; broker auth/ACLs are operator-managed and not enforced by this repo | Forged events, user confusion, DoS | NATS is intended to be internal; call stream validates users before normal publish | Internal network is trusted too broadly unless operators add auth/ACLs | NATS TLS/auth/ACLs; network policy; per-service subject permissions; signed relay envelopes | P0 before prod, P1 before open source |
-| TM-004 | Authenticated payload amplification | Message, sealed-message, key-upload, backup metadata, call stream, and call-history paths lack consistent caps; examples include `crates/sanchr-core/src/messaging/handlers.rs`, `crates/sanchr-core/src/messaging/sealed_handler.rs`, `crates/sanchr-core/src/keys/handlers.rs`, and `crates/sanchr-call/src/signaling.rs:486` | Storage, CPU, memory, queue, and cloud-cost DoS | Some caps exist: media 100 MiB, backup body 512 MiB, vault metadata 64 KiB, discovery batch 500 | Missing global gRPC size limits, array limits, and byte limits | Add per-RPC constants, Tonic max message sizes, quotas, paging maxes, fuzz/load tests | P1 |
-| TM-005 | Paper-claim mismatch for OPRF/EKF/time bounds | Main generates ephemeral OPRF secret if config is absent and warns dev-only; EKF loop only runs if enabled in config; sealed-sender signer is generated at startup | Public security claims may be inaccurate; privacy windows may not hold | Code has OPRF, EKF, vault, and media-key concepts | Defaults do not enforce claimed production posture; HSM/weekly rotation not present in repo | Add production preflight, KMS/HSM-backed OPRF and signer keys, rotation jobs, and claim-specific tests | P1 before public paper-aligned release |
-| TM-006 | Contact discovery membership and social graph leakage | Legacy contact sync matches `phone_hashes` and returns `phone_number` in `crates/sanchr-core/src/contacts/handlers.rs:15`; registered set and Bloom filter are available to authenticated users in discovery handlers | Phone-number registration enumeration and social graph leakage | Per-user contact sync and discovery rate limits; OPRF batch limit | Legacy hash sync conflicts with OPRF privacy story; registered-set endpoint exposes set material | Gate/remove legacy sync; reduce returned identifiers; tune rate limits; alert on discovery abuse | P1 |
-| TM-007 | Media/backup/vault lifecycle drift | Research paper expects time-bounded auxiliary state; object lifecycle and EKF enforcement are not fail-closed; Scylla startup drops vault tables for dev/staging in `crates/sanchr-db/src/scylla/mod.rs:110` | Data retained too long or accidentally dropped in wrong environment | Ownership checks on media/vault/backup; vault metadata size cap | Retention is not proven by startup gates or tests; dev table drops must not reach prod | Storage lifecycle policies, cleanup workers, fail-closed env checks, remove startup drops before public/prod | P1 |
-| TM-008 | Public repo exposes private operations shape | Public source should not contain production deploy workflows, real registry names, cluster names, hosts, or object-storage buckets | Recon data and accidental deploy behavior in public repo | Public CI is secretless; production CD is intended to stay private | Private ops material can regress back into the public repo without review gates | Keep deploy workflow and production values in private ops; scan public source for private infra strings; pin actions by SHA | P1 guardrail |
-| TM-009 | Naming drift from `sanchr` to `sanchr` | Workspace crates, proto packages, Docker images, Helm resources, docs, and registry names still use `sanchr`; user wants `sanchr` | Brand/API churn and generated-client breakage after public release | Some dashboards and hosts already use Sanchr | Rename is not complete; proto package rename is breaking | Perform planned rename before public launch; document compatibility if proto packages stay stable | P2 |
-| TM-010 | Open source policy process must be operational | `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and README now define baseline public policy | Clearer rights, reporting process, and contribution expectations | MIT license and policy docs are present | Security mailbox and maintainer response process must be confirmed before public launch; dependency license/advisory policy is still pending | Verify security contact monitoring; add `cargo audit`/`cargo deny` or equivalent; add SBOM/release checklist | P2 |
-| TM-011 | Operational metadata exposed over HTTP | Router exposes `/health`, `/ready`, `/metrics` without auth in `crates/sanchr-core/src/server.rs:45`; readiness probes test dependencies | Dependency and metrics exposure if ingress routes are too broad | Separate health ingress template appears limited | Router itself has no auth; metrics exposure depends on deployment | Keep `/metrics` internal; restrict `/ready`; use NetworkPolicy/ingress auth; redact readiness error detail | P2 |
-| TM-012 | Raw internal errors returned to clients | Many handlers construct `Status::internal(format!("... {e}"))` with DB/S3/Redis/NATS errors | Infrastructure details leak to clients and logs | Some code uses generic permission-denied semantics for ownership misses | No centralized gRPC error sanitization | Map internal errors centrally; return stable public error codes; keep detailed logs server-side | P2 |
+| TM-003 | NATS subject-level ACLs not enforced | NATS broker auth is enabled (user/password), but subject-level ACLs and per-service credentials are operator-managed | Compromised pod could publish to any NATS subject if it has the shared credential | NATS auth enabled; both services connect with credentials | Subject ACLs, per-service credentials, TLS, relay envelope signing | Operator should add NATS subject ACLs, TLS, and network policy | P2 |
+| TM-005 | Paper-claim mismatch for OPRF/sealed-sender key material | OPRF server secret and sealed-sender signer use ephemeral dev keys when not explicitly configured; KMS integration is stubbed but not complete | Public security claims may be inaccurate if ephemeral keys are used in production | EKF enabled by default; OPRF rotation implemented; CryptoProvider trait with KMS stubs | HSM/KMS backends are stubs; production key provisioning is operator responsibility | Complete KMS backend implementations; document key provisioning; add startup gate for non-ephemeral keys in prod | P1 |
+| TM-007 | Media/backup/vault lifecycle drift | Research paper expects time-bounded auxiliary state; retention depends on S3 lifecycle policies and EKF enforcement | Data may be retained beyond expected lifetimes | EKF enabled by default with TTL enforcement; S3 lifecycle configurable (30-day default); cleanup sweepers run | Retention not proven by integration tests; S3 lifecycle policy is operator-configured | Add retention integration tests; document operator S3 lifecycle requirements | P2 |
+| TM-008 | Public repo exposes private operations shape | Public source should not contain production deploy workflows, real registry names, or cluster names | Recon data and accidental deploy behavior | Public CI is secretless; production CD is private; Helm chart uses operator-provided values | Private ops material can regress without review gates | Keep deploy workflow and production values in private ops; scan for private infra strings | P2 |
+| TM-009 | Naming drift from `sanchr` to `sanchr` | Workspace crates, proto packages, and binaries still use `sanchr` naming | Brand/API churn and generated-client breakage after public release | Some dashboards and hosts already use Sanchr | Rename is not complete; proto package rename is breaking | Perform planned rename before public launch; document compatibility | P2 |
+| TM-010 | Open source policy process must be operational | Policy docs are present (LICENSE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, GOVERNANCE.md) | Clearer rights, reporting process, and contribution expectations | MIT license and full policy docs; CODEOWNERS; issue templates; RFC process | Security mailbox monitoring must be confirmed; `cargo audit`/`cargo deny` not yet integrated | Verify security contact monitoring; add dependency advisory scanning | P2 |
 
 ## Criticality calibration
 
@@ -267,60 +237,47 @@ Priority definitions:
 
 Current project calibration:
 
-- Because the project is in dev/testing, immediate external user impact is lower than it would be in production.
-- Because the repository may become public, issues that expose confusing defaults, private ops details, or inaccurate paper-aligned claims remain high priority even if no production users exist.
-- Dev-only table drops and dev-mode OTP behavior can be acceptable only when mechanically constrained to local/dev and impossible to carry into staging or production by accident.
-- The private CD clarification lowers the risk of `.github/workflows/deploy.yml` only if the public repo does not include that workflow.
+- The backend has undergone significant security hardening. All P0 items are resolved.
+- Remaining items are P1 (paper-claim key provisioning) and P2 (operational hardening, naming).
+- The repository is suitable for open source release with the current security posture.
 
 Release blockers for open source:
 
 1. Keep production deploy workflow and production/cloud-specific identifiers out of the public repository.
 2. Complete or explicitly plan the remaining legacy `sanchr` naming cleanup.
 3. Confirm the security contact and maintainer response process are operational.
-4. Make dev-mode auth fail-closed outside local/dev.
-5. Document which research-paper defenses are implemented, disabled, experimental, or pending.
 
 Release blockers for production:
 
-1. Disable dev-mode OTP bypass and dev secrets.
-2. Remove the legacy password-change endpoint and define OTP-based account recovery/session revocation semantics.
-3. Add NATS authentication, ACLs, TLS, and network policy.
-4. Add request size, item count, rate, and quota limits across all high-fanout RPCs.
-5. Enforce OPRF/EKF/sealed-sender key material and lifecycle preflights for paper-aligned deployment.
-6. Remove startup table drops and prove retention/deletion behavior with tests.
+1. Provision KMS-backed OPRF server secret and sealed-sender signing key (not ephemeral dev keys).
+2. Configure NATS subject-level ACLs and TLS for production environments.
+3. Add retention integration tests proving EKF TTL and S3 lifecycle enforcement.
+4. Add `cargo audit` / `cargo deny` for dependency advisory scanning.
 
 ## Focus paths for security review
 
-1. Auth and session lifecycle
-   - Review `crates/sanchr-core/src/auth/handlers.rs`, `crates/sanchr-db/src/postgres/refresh_tokens.rs`, `crates/sanchr-db/src/redis/sessions.rs`, and JWT/OTP helpers.
-   - Remove the password-change endpoint in a dedicated auth cleanup because the product direction is OTP-based auth.
-   - Add tests for OTP-based recovery and session revocation semantics once defined.
-   - Add tests that dev OTP is rejected when environment is not local/dev.
+1. KMS key provisioning for production
+   - Complete AWS KMS and HashiCorp Vault CryptoProvider implementations (currently stubs).
+   - Add startup gate that rejects ephemeral OPRF/sealed-sender keys in non-dev mode.
+   - Document key provisioning and rotation procedures for operators.
 
-2. Deployment fail-closed configuration
-   - Review `.env.example`, optional `config/*.yaml` support, and `.github/workflows`.
-   - Add a config validator that rejects placeholder secrets, dev mode, ephemeral OPRF secrets, and ephemeral sealed-sender signer in non-dev.
-   - Keep public CI secretless and free of private deployment assumptions.
+2. NATS subject-level ACLs
+   - Document recommended NATS ACL configuration for production (restrict publish by service).
+   - Consider application-layer relay-envelope signing for defense-in-depth.
 
-3. NATS and internal event trust
-   - Review `crates/sanchr-core/src/messaging/relay_bridge.rs`, `crates/sanchr-call/src/signaling.rs`, and NATS publishing/subscription subjects.
-   - Add subject ACLs, per-service credentials, network policy, and application-level relay-envelope authenticity checks in operator-managed deployments.
+3. Retention integration tests
+   - Add tests proving EKF TTL enforcement for all key classes.
+   - Add tests proving S3 lifecycle policy enforcement for media/backup cleanup.
+   - Add tests proving daily salt rotation and OPRF secret rotation.
 
-4. Payload bounds and quota enforcement
-   - Review `messaging`, `sealed_handler`, `keys`, `backup`, and `calling` handlers.
-   - Define constants for max device messages, ciphertext bytes, key counts, metadata bytes, stream message bytes, and max page sizes.
-   - Enforce limits at protobuf validation and Tonic transport boundaries.
+4. Dependency security
+   - Add `cargo audit` or `cargo deny` to CI pipeline.
+   - Add SBOM generation to release process.
+   - Pin GitHub Actions by SHA.
 
-5. Contact discovery and paper alignment
-   - Review `contacts`, `discovery`, `ekf`, `media_keys`, `vault`, and `backup` code paths against the research paper.
-   - Decide whether legacy hash contact sync remains in public code. If yes, document it as a dev/testing or compatibility API and keep it outside paper-backed claims.
-   - Add tests for daily salt rotation, OPRF secret configuration, EKF TTLs, media auxiliary-state expiry, and backup/vault retention.
-
-6. Open source release hygiene
-   - Rename or intentionally freeze `sanchr` identifiers before public release.
-   - Keep `LICENSE`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, and `CODE_OF_CONDUCT.md` current; add `NOTICE` if dependency/license review requires it.
-   - Add dependency policy: `cargo audit` or equivalent advisory scanning, dependency license checks, SBOM generation, and pinned GitHub Actions.
-   - Keep private deployment docs, production values, registry names, and secrets in a private ops repository.
+5. Naming cleanup
+   - Plan and execute the `sanchr` → `Sanchr` rename across crates, proto packages, and binaries.
+   - Document proto package migration strategy for generated client compatibility.
 
 ## Quality check
 
@@ -330,4 +287,5 @@ Release blockers for production:
 - Abuse-path focused: top risks are written as attacker paths with impact and mitigations, not generic STRIDE categories.
 - Open-source focused: the report includes naming, license, policy, CI/CD, and public-claim readiness, not only runtime threats.
 - No secrets disclosed: local `.env` values were not copied into this report.
+- Remediation tracked: all P0 findings have been resolved as of 2026-04-16. Remaining items are P1 (KMS key provisioning) and P2 (operational hardening).
 - Limitations: this is a static repository review. It does not prove exploitability dynamically, validate live Kubernetes/IAM/NATS settings, or audit client applications.

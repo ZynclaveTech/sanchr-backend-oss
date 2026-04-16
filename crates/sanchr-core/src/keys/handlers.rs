@@ -8,6 +8,7 @@ use uuid::Uuid;
 use sanchr_common::errors::internal_status;
 use sanchr_db::postgres::devices as pg_devices;
 use sanchr_db::postgres::keys as pg_keys;
+use sanchr_db::redis::rate_limit;
 use sanchr_proto::keys::{
     DeviceInfo, KyberPreKey, OneTimePreKey, PreKeyBundleResponse, SignedPreKey,
 };
@@ -33,6 +34,17 @@ pub async fn handle_upload_key_bundle(
     params: UploadKeyBundleParams,
 ) -> Result<(), Status> {
     let user_id = params.user_id;
+
+    // Rate limit: max 10 key bundle uploads per hour
+    let rate_key = format!("rate:keys:upload:{}", user_id);
+    rate_limit::check_rate_limit(&state.redis, &rate_key, 10, 3600)
+        .await
+        .map_err(|e| match e {
+            sanchr_common::errors::AppError::RateLimited => {
+                Status::resource_exhausted("key upload rate limited")
+            }
+            other => internal_status("rate limit check", other),
+        })?;
     let device_id = params.device_id;
     let identity_public_key = params.identity_public_key;
     let signed_pre_key = params.signed_pre_key;
@@ -127,9 +139,23 @@ pub async fn handle_get_pre_key_bundle(
     target_user_id: Uuid,
     target_device_id: i32,
 ) -> Result<PreKeyBundleResponse, Status> {
+    // Rate limit: max 60 pre-key bundle fetches per hour
+    let rate_key = format!("rate:keys:get_bundle:{}", target_user_id);
+    rate_limit::check_rate_limit(&state.redis, &rate_key, 60, 3600)
+        .await
+        .map_err(|e| match e {
+            sanchr_common::errors::AppError::RateLimited => {
+                Status::resource_exhausted("pre-key bundle fetch rate limited")
+            }
+            other => internal_status("rate limit check", other),
+        })?;
+
     let bundle = pg_keys::get_pre_key_bundle(&state.pg_pool, target_user_id, target_device_id)
         .await
-        .map_err(|e| Status::not_found(format!("pre-key bundle not found: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "pre-key bundle not found");
+            Status::not_found("pre-key bundle not found")
+        })?;
 
     // Decrement prekey count in Redis (the DB already consumed one OTP key)
     let redis_key = format!("prekey_count:{target_user_id}:{target_device_id}");
@@ -200,6 +226,17 @@ pub async fn handle_upload_one_time_pre_keys(
     device_id: i32,
     keys: Vec<OneTimePreKey>,
 ) -> Result<i32, Status> {
+    // Rate limit: max 10 one-time pre-key uploads per hour
+    let rate_key = format!("rate:keys:upload_otpk:{}", user_id);
+    rate_limit::check_rate_limit(&state.redis, &rate_key, 10, 3600)
+        .await
+        .map_err(|e| match e {
+            sanchr_common::errors::AppError::RateLimited => {
+                Status::resource_exhausted("one-time pre-key upload rate limited")
+            }
+            other => internal_status("rate limit check", other),
+        })?;
+
     if keys.len() > MAX_ONE_TIME_PRE_KEYS_PER_UPLOAD {
         return Err(Status::invalid_argument(format!(
             "keys exceeds maximum of {MAX_ONE_TIME_PRE_KEYS_PER_UPLOAD}"

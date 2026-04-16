@@ -1,0 +1,128 @@
+# -- Sanchr Backend Helm Values
+# Operators must provide their own PostgreSQL, Redis, ScyllaDB, NATS, and S3.
+
+# ---------------------------------------------------------------------------
+# Core service (sanchr-core): gRPC API + HTTP health
+# ---------------------------------------------------------------------------
+core:
+  replicas: 2
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    grpcPort: 9090
+    httpPort: 8080
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  # -- Additional pod annotations
+  podAnnotations: {}
+  # -- Node selector constraints
+  nodeSelector: {}
+  # -- Tolerations
+  tolerations: []
+  # -- Affinity rules
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Call service (sanchr-call): voice/video signalling
+# ---------------------------------------------------------------------------
+call:
+  enabled: true
+  replicas: 2
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    grpcPort: 9091
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Common Kubernetes objects
+# ---------------------------------------------------------------------------
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Application configuration (non-secret)
+# ---------------------------------------------------------------------------
+config:
+  auth:
+    devMode: false
+    accessTokenTtl: 900
+    refreshTokenTtl: 7776000
+    otpTtl: 300
+  database:
+    postgres:
+      url: ""
+      maxConnections: 10
+      minConnections: 2
+    redis:
+      url: ""
+      poolSize: 8
+    scylla:
+      nodes: ""
+      keyspace: sanchr
+      replicationFactor: 1
+    nats:
+      url: ""
+      username: ""
+      password: ""
+  storage:
+    endpoint: ""
+    bucket: ""
+    region: ""
+  ekf:
+    enabled: true
+    tickIntervalSecs: 60
+    rotationGraceSecs: 3600
+
+# ---------------------------------------------------------------------------
+# External secrets (NEVER store secret values here)
+# Provide the name of a pre-existing Kubernetes Secret for each category.
+# ---------------------------------------------------------------------------
+existingSecrets:
+  # -- Secret containing keys: jwt_secret, otp_secret
+  auth: ""
+  # -- Secret containing keys: access_key, secret_key
+  storage: ""
+  # -- Secret containing key: turn_secret
+  calling: ""
+  # -- Secret containing APNs/FCM keys (apns_key, fcm_key)
+  push: ""

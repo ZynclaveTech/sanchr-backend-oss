@@ -5,7 +5,8 @@ use tonic::{Request, Response, Status};
 use sanchr_proto::auth::auth_service_server::AuthService;
 use sanchr_proto::auth::{
     AuthResponse, DeleteAccountRequest, DeleteAccountResponse, LoginRequest, LogoutRequest,
-    LogoutResponse, RefreshTokenRequest, RegisterRequest, User, VerifyOtpRequest,
+    LogoutResponse, RefreshTokenRequest, RegisterRequest, RequestChallengeRequest,
+    RequestChallengeResponse, User, VerifyOtpRequest,
 };
 
 use crate::auth::handlers::{self, AuthResult};
@@ -58,12 +59,18 @@ impl AuthService for AuthServiceImpl {
             Some(req.email.as_str())
         };
 
+        let challenge_proof = req
+            .challenge_proof
+            .as_ref()
+            .map(|p| (p.challenge_id.as_str(), p.solution.as_str()));
+
         let result = handlers::handle_register(
             &self.state,
             &req.phone_number,
             &req.display_name,
             &req.password,
             email,
+            challenge_proof,
         )
         .await
         .map_err(Status::from)?;
@@ -210,5 +217,30 @@ impl AuthService for AuthServiceImpl {
             .map_err(Status::from)?;
 
         Ok(Response::new(DeleteAccountResponse { success: true }))
+    }
+
+    async fn request_challenge(
+        &self,
+        request: Request<RequestChallengeRequest>,
+    ) -> Result<Response<RequestChallengeResponse>, Status> {
+        let req = request.into_inner();
+
+        let provider = self
+            .state
+            .challenge_provider
+            .as_ref()
+            .ok_or_else(|| Status::unavailable("challenge system is not enabled"))?;
+
+        let challenge = provider
+            .issue(&req.phone_number)
+            .await
+            .map_err(Status::from)?;
+
+        Ok(Response::new(RequestChallengeResponse {
+            challenge_type: challenge.challenge_type,
+            challenge_id: challenge.challenge_id,
+            challenge_data: challenge.challenge_data,
+            expires_at: challenge.expires_at,
+        }))
     }
 }

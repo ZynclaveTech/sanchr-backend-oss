@@ -156,7 +156,10 @@ pub async fn handle_commit_backup(
         .key(&backup.object_key)
         .send()
         .await
-        .map_err(|e| Status::not_found(format!("backup object not found in S3: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "backup object not found in S3");
+            Status::not_found("object not found")
+        })?;
     let object_size = head.content_length().unwrap_or_default();
     if object_size != backup.byte_size {
         return Err(Status::failed_precondition(

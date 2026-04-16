@@ -1,0 +1,7 @@
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: textarea
+    attributes:
+      label: Question
+      description: What would you like to know?

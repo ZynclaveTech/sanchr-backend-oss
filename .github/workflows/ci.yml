@@ -21,6 +21,21 @@ jobs:
     with:
       test_command: make reliability-guards
 
+  fuzz_smoke:
+    name: Fuzz Smoke Test
+    needs: lint_and_unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz
+      - run: cargo +nightly fuzz build
+      - run: |
+          cargo +nightly fuzz run fuzz_proto_decode -- -max_total_time=30
+          cargo +nightly fuzz run fuzz_otp -- -max_total_time=30
+          cargo +nightly fuzz run fuzz_oprf -- -max_total_time=30
+          cargo +nightly fuzz run fuzz_jwt -- -max_total_time=30
+
   integration:
     name: Integration Tests
     needs: lint_and_unit

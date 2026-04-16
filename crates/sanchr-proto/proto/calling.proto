@@ -1,82 +1,156 @@
 syntax = "proto3";
 package sanchr.calling;
 
+// CallSignalingService handles voice and video call setup, real-time
+// signaling (ICE candidates, SDP exchange), call history, and TURN
+// credential provisioning. Calls use sealed-sender encryption for SDP
+// payloads when delivery tokens are provided. All RPCs require a valid
+// Bearer token in the `authorization` metadata header.
 service CallSignalingService {
+  // InitiateCall starts a new voice or video call to the specified recipient.
+  // The server creates a call record and pushes a CallOfferEvent to the
+  // recipient via their MessageStream.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown recipient), PERMISSION_DENIED (blocked),
+  //   ALREADY_EXISTS (active call with same recipient).
   rpc InitiateCall(CallOffer) returns (CallResponse);
+
+  // CallStream is a bidirectional streaming RPC for exchanging real-time
+  // call signaling data (ICE candidates, SDP answers, call control events).
+  // Both caller and callee open a stream for the duration of the call.
+  //
+  // Auth: Bearer token required.
   rpc CallStream(stream CallSignal) returns (stream CallSignal);
+
+  // EndCall terminates an active call with a specified reason. Triggers
+  // a CallLifecycleEvent to all participants.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown call_id).
   rpc EndCall(EndCallRequest) returns (EndCallResponse);
+
+  // GetCallHistory returns the user's recent call log entries, ordered
+  // by start time (newest first).
+  //
+  // Auth: Bearer token required.
   rpc GetCallHistory(GetCallHistoryRequest) returns (GetCallHistoryResponse);
+
+  // GetTurnCredentials returns short-lived TURN server credentials for
+  // NAT traversal during calls.
+  //
+  // Auth: Bearer token required.
   rpc GetTurnCredentials(GetTurnCredentialsRequest) returns (TurnCredentials);
 }
 
+// CallOffer initiates a call to a recipient.
 message CallOffer {
-  string recipient_id = 1;    // kept for server backward compat; unused when delivery_token is set
-  string call_type = 2;       // "voice" or "video"
-  reserved 3;                 // was sdp_offer — do not reuse
+  // UUID of the recipient (kept for backward compat; unused when
+  // delivery_token is set).
+  string recipient_id = 1;
+  // Call type: "voice" or "video".
+  string call_type = 2;
+  reserved 3;                 // was sdp_offer -- do not reuse
   reserved "sdp_offer";
-  reserved 4;                 // was srtp_key_params — do not reuse
+  reserved 4;                 // was srtp_key_params -- do not reuse
   reserved "srtp_key_params";
-  bytes delivery_token = 5;         // sealed sender routing token
-  bytes encrypted_sdp_payload = 6;  // Signal-encrypt(SealedCallPayload JSON)
+  // Sealed-sender delivery token for anonymous routing.
+  bytes delivery_token = 5;
+  // Signal-encrypted SDP payload (SealedCallPayload JSON).
+  bytes encrypted_sdp_payload = 6;
 }
 
+// CallResponse confirms call initiation.
 message CallResponse {
+  // Server-assigned call UUID.
   string call_id = 1;
-  string status = 2;          // "ringing", "busy", "unavailable"
+  // Initial call status: "ringing", "busy", or "unavailable".
+  string status = 2;
 }
 
+// CallSignal carries real-time signaling data over the CallStream.
 message CallSignal {
+  // Call UUID this signal belongs to.
   string call_id = 1;
-  reserved 2;                       // was sdp_answer — do not reuse
+  reserved 2;                       // was sdp_answer -- do not reuse
   reserved "sdp_answer";
   oneof signal {
-    bytes ice_candidate = 3;          // unchanged
-    CallControl control = 4;          // unchanged
-    bytes encrypted_sdp_answer = 5;   // Signal-encrypt(SealedCallPayload JSON)
-    CallJoin join = 6;                // stream join; consumed by server, not relayed
+    // ICE candidate for NAT traversal.
+    bytes ice_candidate = 3;
+    // Call control event (accept, decline, end, etc.).
+    CallControl control = 4;
+    // Signal-encrypted SDP answer (SealedCallPayload JSON).
+    bytes encrypted_sdp_answer = 5;
+    // Stream join event; consumed by server, not relayed to peer.
+    CallJoin join = 6;
   }
 }
 
+// CallJoin is sent when a participant joins the call stream.
 message CallJoin {
-  string role = 1;             // "caller" or "callee"
+  // Role of the joining participant: "caller" or "callee".
+  string role = 1;
 }
 
+// CallControl carries call lifecycle actions over the CallStream.
 message CallControl {
-  string action = 1;           // "ringing", "accepted", "declined", "busy", "ended", "missed"
+  // Action: "ringing", "accepted", "declined", "busy", "ended", "missed".
+  string action = 1;
 }
 
+// EndCallRequest terminates an active call.
 message EndCallRequest {
+  // UUID of the call to end.
   string call_id = 1;
-  string reason = 2;           // "ended", "declined", "cancelled", "busy", "missed", "failed"
+  // Termination reason: "ended", "declined", "cancelled", "busy",
+  // "missed", "failed".
+  string reason = 2;
 }
 
 message EndCallResponse {}
 
 message GetCallHistoryRequest {
+  // Maximum number of entries to return. Default: 50.
   int32 limit = 1;
 }
 
 message GetCallHistoryResponse {
+  // Call log entries, newest first.
   repeated CallLogEntry entries = 1;
 }
 
+// CallLogEntry records a completed or missed call.
 message CallLogEntry {
+  // Call UUID.
   string call_id = 1;
+  // UUID of the remote peer.
   string peer_id = 2;
+  // Display name of the remote peer.
   string peer_name = 3;
-  string call_type = 4;       // "voice" or "video"
-  string direction = 5;       // "incoming" or "outgoing"
-  string status = 6;          // "completed", "missed", "declined", "busy"
+  // Call type: "voice" or "video".
+  string call_type = 4;
+  // Direction: "incoming" or "outgoing".
+  string direction = 5;
+  // Final status: "completed", "missed", "declined", "busy".
+  string status = 6;
+  // Unix timestamp (milliseconds) when the call started.
   int64 started_at = 7;
+  // Unix timestamp (milliseconds) when the call ended.
   int64 ended_at = 8;
+  // Call duration in seconds (0 for missed/declined calls).
   int32 duration_secs = 9;
 }
 
 message GetTurnCredentialsRequest {}
 
+// TurnCredentials provides short-lived TURN server access for NAT traversal.
 message TurnCredentials {
+  // TURN server URLs (e.g., "turn:turn.example.com:3478").
   repeated string urls = 1;
+  // Time-limited TURN username.
   string username = 2;
+  // Time-limited TURN credential/password.
   string credential = 3;
+  // Credential TTL in seconds.
   int64 ttl = 4;
 }

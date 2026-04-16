@@ -56,9 +56,10 @@ pub async fn handle_oprf_discover(
     }
 
     // Server-side OPRF evaluation.
-    let evaluated = oprf
-        .evaluate_batch(&compressed_points)
-        .map_err(|e| Status::invalid_argument(format!("OPRF evaluation failed: {e}")))?;
+    let evaluated = oprf.evaluate_batch(&compressed_points).map_err(|e| {
+        tracing::error!(error = %e, "OPRF evaluation failed");
+        Status::invalid_argument("OPRF evaluation failed")
+    })?;
 
     Ok(evaluated
         .into_iter()

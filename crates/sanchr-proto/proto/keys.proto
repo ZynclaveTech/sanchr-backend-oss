@@ -1,89 +1,173 @@
 syntax = "proto3";
 package sanchr.keys;
 
+// KeyService manages Signal Protocol key bundles, one-time pre-keys, and
+// multi-device registration. All RPCs require a valid Bearer token in the
+// `authorization` metadata header.
 service KeyService {
+  // UploadKeyBundle publishes the device's identity key, signed pre-key,
+  // Kyber pre-key, and initial batch of one-time pre-keys. Called once
+  // during device registration and when rotating the signed pre-key.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (malformed keys or missing fields).
   rpc UploadKeyBundle(KeyBundle) returns (UploadKeyBundleResponse);
+
+  // GetPreKeyBundle fetches the public key material needed to establish a
+  // Signal Protocol session with a specific user device. Consumes one
+  // one-time pre-key from the target's pool (if available).
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown user or device).
   rpc GetPreKeyBundle(GetPreKeyBundleRequest) returns (PreKeyBundleResponse);
+
+  // UploadOneTimePreKeys replenishes the device's one-time pre-key pool on
+  // the server. Called when the client receives a PreKeyCountLow warning.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (empty keys list or duplicate key IDs).
   rpc UploadOneTimePreKeys(UploadOneTimePreKeysRequest) returns (PreKeyCountResponse);
+
+  // GetPreKeyCount returns the number of remaining one-time pre-keys stored
+  // on the server for the authenticated device.
+  //
+  // Auth: Bearer token required.
   rpc GetPreKeyCount(GetPreKeyCountRequest) returns (PreKeyCountResponse);
+
+  // GetUserDevices lists all registered devices for a given user, including
+  // platform, key capability, and last-active timestamps.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown user).
   rpc GetUserDevices(GetUserDevicesRequest) returns (GetUserDevicesResponse);
+
+  // RemoveDevice unregisters a device from the authenticated user's account
+  // and deletes its key material from the server.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown device), PERMISSION_DENIED (device belongs
+  //   to another user).
   rpc RemoveDevice(RemoveDeviceRequest) returns (RemoveDeviceResponse);
 }
 
+// SignedPreKey is a Curve25519 pre-key signed by the device's identity key.
 message SignedPreKey {
+  // Monotonically increasing key identifier.
   int32 key_id = 1;
+  // Curve25519 public key bytes.
   bytes public_key = 2;
+  // Ed25519 signature over the public key, produced by the identity key.
   bytes signature = 3;
+  // Unix timestamp (milliseconds) when this key was generated.
   int64 timestamp = 4;
 }
 
+// OneTimePreKey is a single-use Curve25519 pre-key.
 message OneTimePreKey {
+  // Monotonically increasing key identifier.
   int32 key_id = 1;
+  // Curve25519 public key bytes.
   bytes public_key = 2;
 }
 
+// KyberPreKey is a post-quantum KEM pre-key (ML-KEM / Kyber-1024), signed by
+// the device's identity key. Provides post-quantum forward secrecy.
 message KyberPreKey {
+  // Monotonically increasing key identifier.
   int32 key_id = 1;
+  // ML-KEM public key bytes.
   bytes public_key = 2;
+  // Ed25519 signature over the public key, produced by the identity key.
   bytes signature = 3;
+  // Unix timestamp (milliseconds) when this key was generated.
   int64 timestamp = 4;
 }
 
+// KeyBundle is the complete key material uploaded during device registration.
 message KeyBundle {
+  // Curve25519 identity public key for this device.
   bytes identity_public_key = 1;
+  // Current signed pre-key.
   SignedPreKey signed_pre_key = 2;
+  // Initial batch of one-time pre-keys.
   repeated OneTimePreKey one_time_pre_keys = 3;
+  // Signal Protocol registration ID for this device.
   int32 registration_id = 4;
+  // Server-assigned numeric device identifier.
   int32 device_id = 5;
+  // Post-quantum Kyber pre-key.
   KyberPreKey kyber_pre_key = 6;
 }
 
 message UploadKeyBundleResponse {}
 
 message GetPreKeyBundleRequest {
+  // UUID of the target user.
   string user_id = 1;
+  // Numeric device identifier. Use 0 to fetch for the primary device.
   int32 device_id = 2;
 }
 
+// PreKeyBundleResponse contains the public key material needed to establish
+// a Signal Protocol session with a remote device.
 message PreKeyBundleResponse {
+  // Remote device's Curve25519 identity public key.
   bytes identity_public_key = 1;
+  // Remote device's current signed pre-key.
   SignedPreKey signed_pre_key = 2;
+  // A single consumed one-time pre-key, or empty if the pool is exhausted.
   OneTimePreKey one_time_pre_key = 3;
+  // Remote device identifier.
   int32 device_id = 4;
+  // Remote device's Signal Protocol registration ID.
   int32 registration_id = 5;
+  // Remote device's post-quantum Kyber pre-key.
   KyberPreKey kyber_pre_key = 6;
 }
 
 message UploadOneTimePreKeysRequest {
+  // Batch of new one-time pre-keys to add to the server pool.
   repeated OneTimePreKey keys = 1;
 }
 
+// PreKeyCountResponse reports the remaining one-time pre-key count.
 message PreKeyCountResponse {
+  // Number of unused one-time pre-keys on the server.
   int32 count = 1;
 }
 
 message GetPreKeyCountRequest {}
 
 message GetUserDevicesRequest {
+  // UUID of the user whose devices to list.
   string user_id = 1;
 }
 
 message GetUserDevicesResponse {
+  // All registered devices for the user.
   repeated DeviceInfo devices = 1;
 }
 
+// DeviceInfo describes a single registered device.
 message DeviceInfo {
+  // Server-assigned numeric device identifier.
   int32 device_id = 1;
+  // Operating system: "ios", "android", or "web".
   string platform = 2;
+  // Whether this device supports delivery acknowledgements.
   bool supports_delivery_ack = 3;
+  // Whether this device has uploaded a valid key bundle.
   bool key_capable = 4;
+  // Unix timestamp (milliseconds) of last activity on this device.
   int64 last_active_at = 5;
 }
 
 message RemoveDeviceRequest {
+  // Numeric device identifier to remove.
   int32 device_id = 1;
 }
 
 message RemoveDeviceResponse {
+  // True if the device was successfully removed.
   bool success = 1;
 }

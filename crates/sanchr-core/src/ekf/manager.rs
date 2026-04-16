@@ -45,14 +45,7 @@ pub async fn lifecycle_tick(state: &Arc<AppState>) -> Result<(), Box<dyn std::er
     let now = Utc::now();
     let now_millis = now.timestamp_millis();
 
-    // Pull the grace period from config (defaults to 3600 s if no EKF config
-    // block is present).
-    let grace_secs = state
-        .config
-        .ekf
-        .as_ref()
-        .map(|c| c.rotation_grace_secs as i64)
-        .unwrap_or(3600);
+    let grace_secs = state.config.ekf.rotation_grace_secs as i64;
 
     let key_classes = [
         KeyClass::Presence,

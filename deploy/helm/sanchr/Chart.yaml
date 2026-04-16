@@ -1,0 +1,13 @@
+apiVersion: v2
+name: sanchr
+description: Sanchr - privacy-first messaging backend (gRPC)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - messaging
+  - grpc
+  - rust
+  - privacy
+maintainers:
+  - name: Zynclave

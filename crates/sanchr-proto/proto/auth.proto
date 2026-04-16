@@ -1,56 +1,167 @@
 syntax = "proto3";
 package sanchr.auth;
 
+// AuthService handles user registration, OTP verification, authentication,
+// and account lifecycle management. All RPCs except Register, VerifyOTP, and
+// RequestChallenge require a valid Bearer token in the `authorization`
+// metadata header.
 service AuthService {
+  // Register initiates account creation. Issues an OTP to the provided phone
+  // number. If the server has challenge enforcement enabled, a valid
+  // ChallengeProof must be included.
+  //
+  // Rate limit: 5 requests per 15 minutes per phone number.
+  // Auth: none required.
+  // Errors: INVALID_ARGUMENT (bad phone format), RESOURCE_EXHAUSTED (rate
+  //   limited), ALREADY_EXISTS (phone already registered).
   rpc Register(RegisterRequest) returns (AuthResponse);
+
+  // VerifyOTP completes registration by validating the one-time password sent
+  // to the user's phone. On success, returns access and refresh tokens.
+  //
+  // Rate limit: 10 attempts per phone number per OTP issuance.
+  // Auth: none required.
+  // Errors: INVALID_ARGUMENT (wrong OTP), NOT_FOUND (no pending registration),
+  //   RESOURCE_EXHAUSTED (too many attempts), PERMISSION_DENIED (registration
+  //   lock active and no valid PIN provided).
   rpc VerifyOTP(VerifyOTPRequest) returns (AuthResponse);
+
+  // Login authenticates a returning user with phone number and password.
+  // Returns fresh access and refresh tokens.
+  //
+  // Rate limit: 10 attempts per 15 minutes per phone number.
+  // Auth: none required.
+  // Errors: UNAUTHENTICATED (wrong credentials), NOT_FOUND (unknown phone),
+  //   PERMISSION_DENIED (registration lock active and no valid PIN provided).
   rpc Login(LoginRequest) returns (AuthResponse);
+
+  // RefreshToken exchanges a valid refresh token for a new access/refresh
+  // token pair. The old refresh token is revoked on success.
+  //
+  // Auth: none required (the refresh token itself is the credential).
+  // Errors: UNAUTHENTICATED (expired or revoked token).
   rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+
+  // Logout revokes the given refresh token, ending the session for that
+  // device. The access token remains valid until its short TTL expires.
+  //
+  // Auth: Bearer token required.
+  // Errors: UNAUTHENTICATED (invalid token).
   rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // DeleteAccount permanently removes the user's account and all associated
+  // data (keys, messages, vault items, contacts, backups). This action is
+  // irreversible.
+  //
+  // Auth: Bearer token required.
+  // Errors: UNAUTHENTICATED (invalid token).
   rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+
+  // RequestChallenge returns a proof-of-work challenge that must be solved
+  // and attached to a Register request. Used for anti-abuse rate limiting.
+  //
+  // Rate limit: 20 requests per minute per IP.
+  // Auth: none required.
+  // Errors: RESOURCE_EXHAUSTED (rate limited).
+  rpc RequestChallenge(RequestChallengeRequest) returns (RequestChallengeResponse);
 }
 
+// DeviceInfo identifies the client device registering or logging in.
 message DeviceInfo {
+  // Human-readable device name (e.g., "Pixel 7", "iPhone 15 Pro").
   string device_name = 1;
+  // Operating system: "ios", "android", or "web".
   string platform = 2;
+  // Client-generated unique installation identifier (UUID).
   string installation_id = 3;
+  // Whether this device supports delivery acknowledgements over the
+  // MessageStream bidirectional RPC.
   bool supports_delivery_ack = 4;
 }
 
+// RegisterRequest initiates account creation for a new user.
 message RegisterRequest {
+  // E.164 formatted phone number (e.g., "+14155552671").
   string phone_number = 1;
+  // User-facing display name. Max 128 characters.
   string display_name = 2;
+  // Account password. Min 8 characters.
   string password = 3;
+  // Optional recovery email address.
   string email = 4;
+  // Device metadata for the registering client.
   DeviceInfo device = 5;
+  // Proof-of-work solution if challenge enforcement is active.
+  ChallengeProof challenge_proof = 6;
+}
+
+// Challenge system for abuse detection.
+message RequestChallengeRequest {
+  // E.164 formatted phone number requesting registration.
+  string phone_number = 1;
+}
+
+message RequestChallengeResponse {
+  // Challenge type identifier. Currently only "pow" (proof-of-work).
+  string challenge_type = 1;
+  // Server-generated challenge UUID.
+  string challenge_id = 2;
+  // JSON-encoded challenge parameters (e.g., {"difficulty": 20, "prefix": "..."}).
+  string challenge_data = 3;
+  // Unix timestamp (seconds) when the challenge expires.
+  int64 expires_at = 4;
+}
+
+// ChallengeProof contains the client's solution to a proof-of-work challenge.
+message ChallengeProof {
+  // The challenge_id from RequestChallengeResponse.
+  string challenge_id = 1;
+  // The nonce that satisfies the proof-of-work requirement.
+  string solution = 2;
 }
 
 message VerifyOTPRequest {
+  // E.164 formatted phone number the OTP was sent to.
   string phone_number = 1;
+  // The 6-digit OTP code received via SMS.
   string otp_code = 2;
+  // Device metadata for the registering client.
   DeviceInfo device = 3;
+  // Registration lock PIN, required only when registration lock is enabled
+  // on the account. Empty string when not applicable.
   string registration_lock_pin = 4;
 }
 
 message LoginRequest {
+  // E.164 formatted phone number.
   string phone_number = 1;
+  // Account password.
   string password = 2;
+  // Device metadata for the logging-in client.
   DeviceInfo device = 3;
+  // Registration lock PIN if registration lock is enabled.
   string registration_lock_pin = 4;
 }
 
 message RefreshTokenRequest {
+  // The refresh token from a previous AuthResponse.
   string refresh_token = 1;
 }
 
 message LogoutRequest {
+  // The refresh token to revoke.
   string refresh_token = 1;
 }
 
+// AuthResponse is returned by Register, VerifyOTP, Login, and RefreshToken.
 message AuthResponse {
+  // Short-lived JWT access token for authenticating subsequent RPCs.
   string access_token = 1;
+  // Long-lived opaque refresh token for obtaining new access tokens.
   string refresh_token = 2;
+  // The authenticated user's profile.
   User user = 3;
+  // Server-assigned numeric device identifier for this session.
   int32 device_id = 4;
 }
 
@@ -58,20 +169,29 @@ message LogoutResponse {}
 
 message DeleteAccountRequest {
   // Reserved for a future password/OTP confirmation field. Kept empty for
-  // now — authentication is enforced via the Bearer access token.
+  // now -- authentication is enforced via the Bearer access token.
   reserved 1;
 }
 
 message DeleteAccountResponse {
+  // True if the account was successfully deleted.
   bool success = 1;
 }
 
+// User represents a Sanchr user profile.
 message User {
+  // Server-assigned UUID.
   string id = 1;
+  // E.164 formatted phone number.
   string phone_number = 2;
+  // User-facing display name.
   string display_name = 3;
+  // Optional recovery email.
   string email = 4;
+  // URL to the user's avatar image, or empty.
   string avatar_url = 5;
+  // Free-text status message.
   string status_text = 6;
+  // ISO 8601 timestamp of account creation.
   string created_at = 7;
 }

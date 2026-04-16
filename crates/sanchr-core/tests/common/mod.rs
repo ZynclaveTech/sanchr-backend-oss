@@ -89,6 +89,19 @@ pub async fn setup_test_state() -> Arc<sanchr_core::server::AppState> {
     let metrics_handle = sanchr_core::observability::metrics::init_metrics()
         .expect("failed to initialize test metrics recorder");
 
+    let sealed_sender_signer =
+        Arc::new(sanchr_server_crypto::sealed_sender::SealedSenderSigner::generate(1));
+
+    let crypto_provider: Arc<dyn sanchr_server_crypto::provider::CryptoProvider> = Arc::new(
+        sanchr_server_crypto::local_provider::LocalCryptoProvider::new(
+            JwtManager::new(config.auth.jwt_secret.as_bytes()),
+            config.auth.otp_secret.clone(),
+            config.auth.otp_ttl,
+            Arc::clone(&sealed_sender_signer),
+            config.calling.turn_secret.clone(),
+        ),
+    );
+
     Arc::new(sanchr_core::server::AppState {
         config,
         pg_pool,
@@ -104,10 +117,10 @@ pub async fn setup_test_state() -> Arc<sanchr_core::server::AppState> {
         discovery_snapshot_cache: Arc::new(
             sanchr_core::discovery::cache::DiscoverySnapshotCache::new(),
         ),
-        sealed_sender_signer: Arc::new(
-            sanchr_server_crypto::sealed_sender::SealedSenderSigner::generate(1),
-        ),
+        sealed_sender_signer,
         push_sender: None,
+        challenge_provider: None,
+        crypto_provider,
     })
 }
 
@@ -152,7 +165,7 @@ pub async fn register_and_verify_user_with_delivery_ack(
     let phone = unique_phone();
     let name = unique_name();
 
-    sanchr_core::auth::handlers::handle_register(state, &phone, &name, password, None)
+    sanchr_core::auth::handlers::handle_register(state, &phone, &name, password, None, None)
         .await
         .expect("registration failed");
 

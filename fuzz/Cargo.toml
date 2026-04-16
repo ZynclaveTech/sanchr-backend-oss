@@ -1,0 +1,38 @@
+[package]
+name = "sanchr-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+prost = "0.13"
+sanchr-server-crypto = { path = "../crates/sanchr-server-crypto" }
+sanchr-psi = { path = "../crates/sanchr-psi" }
+curve25519-dalek = "4"
+
+# Prevent this crate from being part of the workspace.
+[workspace]
+
+[[bin]]
+name = "fuzz_proto_decode"
+path = "fuzz_targets/fuzz_proto_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_otp"
+path = "fuzz_targets/fuzz_otp.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_oprf"
+path = "fuzz_targets/fuzz_oprf.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_jwt"
+path = "fuzz_targets/fuzz_jwt.rs"
+doc = false

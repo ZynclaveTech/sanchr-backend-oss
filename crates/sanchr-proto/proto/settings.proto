@@ -1,62 +1,136 @@
 syntax = "proto3";
 package sanchr.settings;
 
+// SettingsService manages user preferences, profile updates, privacy modes,
+// registration lock, and storage usage queries. All RPCs require a valid
+// Bearer token in the `authorization` metadata header.
 service SettingsService {
+  // GetSettings returns the authenticated user's current preferences.
+  //
+  // Auth: Bearer token required.
   rpc GetSettings(GetSettingsRequest) returns (UserSettings);
+
+  // UpdateSettings replaces the user's preferences with the provided values.
+  // All fields in the UserSettings message are overwritten; omitted fields
+  // revert to their proto default values.
+  //
+  // Auth: Bearer token required.
   rpc UpdateSettings(UpdateSettingsRequest) returns (UserSettings);
+
+  // UpdateProfile updates the user's public-facing profile (display name,
+  // avatar, status text) and encrypted profile fields.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (display_name empty or > 128 chars).
   rpc UpdateProfile(UpdateProfileRequest) returns (ProfileResponse);
+
+  // ToggleSanchrMode enables or disables Sanchr privacy mode. When enabled,
+  // additional privacy protections are applied (e.g., screenshot blocking,
+  // hidden message previews).
+  //
+  // Auth: Bearer token required.
   rpc ToggleSanchrMode(ToggleSanchrModeRequest) returns (UserSettings);
+
+  // GetStorageUsage returns a breakdown of the user's server-side storage
+  // consumption by media type and the account's storage limit.
+  //
+  // Auth: Bearer token required.
   rpc GetStorageUsage(GetStorageUsageRequest) returns (StorageUsageResponse);
+
+  // SetRegistrationLock enables or disables registration lock. When enabled,
+  // re-registration on a new device requires a PIN in addition to OTP
+  // verification.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (PIN too short when enabling).
   rpc SetRegistrationLock(SetRegistrationLockRequest) returns (SetRegistrationLockResponse);
 }
 
 message GetSettingsRequest {}
 
+// UserSettings holds the full set of user preferences.
 message UserSettings {
+  // Whether read receipts are sent to other users.
   bool read_receipts = 1;
+  // Whether online status is visible to contacts.
   bool online_status_visible = 2;
+  // Whether typing indicators are sent.
   bool typing_indicator = 3;
+  // Profile photo visibility: "everyone", "contacts", "nobody".
   string profile_photo_visibility = 4;
+  // Whether Sanchr privacy mode is active.
   bool sanchr_mode_enabled = 5;
+  // Whether the app requires unlock (PIN/biometric) after inactivity.
   bool screen_lock_enabled = 6;
+  // Screen lock inactivity timeout in seconds.
   int32 screen_lock_timeout = 7;
+  // Whether screenshot protection is enabled.
   bool screenshot_protection = 8;
+  // Whether biometric authentication is required for app access.
   bool biometric_lock = 9;
+  // Direct message notification toggle.
   bool message_notifications = 10;
+  // Group message notification toggle.
   bool group_notifications = 11;
+  // Incoming call notification toggle.
   bool call_notifications = 12;
+  // Notification sound name (platform-specific).
   string notification_sound = 13;
+  // Vibration on notification.
   bool notification_vibrate = 14;
+  // Show message preview in notification banner.
   bool show_preview = 15;
+  // UI theme: "light", "dark", or "system".
   string theme = 16;
+  // Font size preference: "small", "medium", "large".
   string font_size = 17;
+  // Chat wallpaper identifier or URL.
   string chat_wallpaper = 18;
+  // Auto-download policy on WiFi: "all", "images", "none".
   string auto_download_wifi = 19;
+  // Auto-download policy on mobile data.
   string auto_download_mobile = 20;
+  // Auto-download policy on roaming.
   string auto_download_roaming = 21;
+  // Reduce data usage for calls and media.
   bool low_data_mode = 22;
+  // Whether registration lock is enabled on this account.
   bool registration_lock_enabled = 23;
 }
 
 message UpdateSettingsRequest {
+  // The complete settings to apply.
   UserSettings settings = 1;
 }
 
+// UpdateProfileRequest updates the user's public-facing profile.
 message UpdateProfileRequest {
+  // User-facing display name. Max 128 characters.
   string display_name = 1;
+  // Avatar URL (obtained from MediaService with MEDIA_PURPOSE_AVATAR).
   string avatar_url   = 2;
+  // Free-text status message.
   string status_text  = 3;
-  // Encrypted profile fields (AES-256-GCM). Server stores as opaque blobs.
+  // AES-256-GCM profile key for encrypting profile fields. Server stores
+  // as an opaque blob.
   bytes profile_key             = 4;
+  // AES-256-GCM encrypted display name.
   bytes encrypted_display_name  = 5;
+  // AES-256-GCM encrypted bio/about text.
   bytes encrypted_bio           = 6;
+  // AES-256-GCM encrypted avatar URL.
   bytes encrypted_avatar_url    = 7;
 }
 
+// ProfileResponse echoes back the persisted profile fields.
 message ProfileResponse {
+  // User UUID.
   string id           = 1;
+  // Display name.
   string display_name = 2;
+  // Avatar URL.
   string avatar_url   = 3;
+  // Status text.
   string status_text  = 4;
   // Server echoes back the persisted encrypted fields.
   bytes profile_key             = 5;
@@ -66,26 +140,38 @@ message ProfileResponse {
 }
 
 message ToggleSanchrModeRequest {
+  // True to enable Sanchr privacy mode, false to disable.
   bool enabled = 1;
 }
 
 message SetRegistrationLockRequest {
+  // True to enable registration lock, false to disable.
   bool enabled = 1;
+  // The PIN to set when enabling. Must be >= 4 digits. Ignored when disabling.
   string pin = 2;
 }
 
 message SetRegistrationLockResponse {
+  // True if the operation succeeded.
   bool success = 1;
 }
 
 message GetStorageUsageRequest {}
 
+// StorageUsageResponse reports server-side storage consumption by category.
 message StorageUsageResponse {
+  // Bytes used by photo media.
   int64 photos_bytes = 1;
+  // Bytes used by video media.
   int64 videos_bytes = 2;
+  // Bytes used by document attachments.
   int64 documents_bytes = 3;
+  // Bytes used by voice messages.
   int64 voice_bytes = 4;
+  // Bytes used by other/uncategorized media.
   int64 other_bytes = 5;
+  // Total bytes used across all categories.
   int64 total_bytes = 6;
+  // Account storage limit in bytes.
   int64 limit_bytes = 7;
 }

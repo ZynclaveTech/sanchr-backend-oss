@@ -1,0 +1,18 @@
+server:
+  grpc_port: 9090
+  http_port: 8080
+  request_size:
+    max_bytes: 1048576  # 1 MiB global default
+    per_rpc:
+      "KeyService/UploadPreKeys": 262144       # 256 KiB
+      "MessagingService/SendMessage": 65536    # 64 KiB
+      "ContactService/SyncContacts": 524288    # 512 KiB
+      "MessagingService/SendReceipt": 16384    # 16 KiB
+      "VaultService/WriteVaultItem": 1048576   # 1 MiB
+      "MediaService/RequestUpload": 16384      # 16 KiB
+
+database:
+  nats:
+    url: "nats://localhost:4222"
+    username: "sanchr"
+    password: "changeme-dev-only"

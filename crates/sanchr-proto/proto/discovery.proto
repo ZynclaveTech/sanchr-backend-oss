@@ -1,32 +1,69 @@
 syntax = "proto3";
 package sanchr.discovery;
 
+// DiscoveryService provides privacy-preserving contact discovery using
+// Oblivious Pseudo-Random Functions (OPRF) and Bloom filters. These RPCs
+// let clients determine which of their phone contacts are registered on
+// Sanchr without revealing non-matching contacts to the server. All RPCs
+// require a valid Bearer token in the `authorization` metadata header.
 service DiscoveryService {
+  // OprfDiscover performs an OPRF evaluation on blinded phone number points.
+  // The client blinds each phone number locally, sends the blinded points,
+  // and the server evaluates them with its OPRF key without learning the
+  // inputs. The client then unblinds to obtain deterministic tokens for
+  // matching against the registered set.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (empty blinded_points list).
   rpc OprfDiscover(OprfDiscoverRequest) returns (OprfDiscoverResponse);
+
+  // GetBloomFilter returns a Bloom filter of all registered phone numbers,
+  // parameterized with a daily-rotating salt. Clients can perform local
+  // membership tests before issuing OPRF queries, reducing server load.
+  //
+  // Auth: Bearer token required.
   rpc GetBloomFilter(GetBloomFilterRequest) returns (GetBloomFilterResponse);
+
+  // GetRegisteredSet returns the full set of OPRF-evaluated registered
+  // phone tokens. Clients compare their unblinded OPRF outputs against
+  // these elements to identify registered contacts.
+  //
+  // Auth: Bearer token required.
   rpc GetRegisteredSet(GetRegisteredSetRequest) returns (GetRegisteredSetResponse);
 }
 
 message OprfDiscoverRequest {
+  // Ristretto255 points, each representing a blinded phone number hash.
   repeated bytes blinded_points = 1;
 }
 
 message OprfDiscoverResponse {
+  // OPRF-evaluated Ristretto255 points, in the same order as the request.
   repeated bytes evaluated_points = 1;
 }
 
 message GetBloomFilterRequest {}
 
+// GetBloomFilterResponse contains a probabilistic data structure for fast
+// local membership testing of registered phone numbers.
 message GetBloomFilterResponse {
+  // Raw Bloom filter bit array.
   bytes filter_bits = 1;
+  // Number of hash functions used by the filter.
   uint32 num_hashes = 2;
+  // Total number of bits in the filter.
   uint64 num_bits = 3;
+  // Daily-rotating salt used to compute Bloom filter entries. Clients must
+  // use this salt when hashing phone numbers for membership tests.
   bytes daily_salt = 4;
+  // Unix timestamp (seconds) when this filter was generated.
   int64 generated_at = 5;
 }
 
 message GetRegisteredSetRequest {}
 
 message GetRegisteredSetResponse {
+  // OPRF-evaluated tokens for all registered phone numbers. Clients compare
+  // their unblinded OPRF outputs against these elements.
   repeated bytes set_elements = 1;
 }

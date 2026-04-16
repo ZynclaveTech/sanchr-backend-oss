@@ -2,7 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use axum::{extract::State, http::StatusCode, routing::get, Router};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 use fred::clients::RedisClient;
 use fred::interfaces::ClientLike;
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -12,8 +18,10 @@ use sqlx::PgPool;
 use sanchr_common::config::AppConfig;
 use sanchr_psi::oprf::OprfServerSecret;
 use sanchr_server_crypto::jwt::JwtManager;
+use sanchr_server_crypto::provider::CryptoProvider;
 use sanchr_server_crypto::sealed_sender::SealedSenderSigner;
 
+use crate::auth::challenge::ChallengeProvider;
 use crate::discovery::cache::DiscoverySnapshotCache;
 use crate::messaging::stream::StreamManager;
 use crate::push::ApnsSender;
@@ -49,6 +57,14 @@ pub struct AppState {
     /// APNs push sender. `None` when `apns_key_path` is not configured
     /// (local dev without credentials).
     pub push_sender: Option<Arc<ApnsSender>>,
+    /// Proof-of-work challenge provider for abuse detection in registration.
+    /// `None` when `challenge.enabled` is false.
+    pub challenge_provider: Option<Arc<dyn ChallengeProvider>>,
+    /// Abstraction layer over all server-side cryptographic operations.
+    /// Existing call sites still use the individual fields (`jwt`,
+    /// `sealed_sender_signer`) directly; this provider is additive and
+    /// will be adopted incrementally.
+    pub crypto_provider: Arc<dyn CryptoProvider>,
 }
 
 /// Build the HTTP router with health, readiness, and metrics endpoints.
@@ -56,11 +72,27 @@ pub fn http_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
-        .route(
-            "/metrics",
-            get(crate::observability::metrics::metrics_handler),
-        )
+        .route("/metrics", get(metrics_handler_with_auth))
         .with_state(state)
+}
+
+async fn metrics_handler_with_auth(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Some(expected_token) = &state.config.server.metrics_token {
+        let auth = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        match auth {
+            Some(token) if token == expected_token => {}
+            _ => return (StatusCode::UNAUTHORIZED, "unauthorized").into_response(),
+        }
+    }
+    crate::observability::metrics::metrics_handler(State(state))
+        .await
+        .into_response()
 }
 
 async fn health() -> &'static str {

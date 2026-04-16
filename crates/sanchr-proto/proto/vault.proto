@@ -1,8 +1,8 @@
 syntax = "proto3";
 package sanchr.vault;
 
-// Forward-secure vault, compliant with the research paper "Threat-Driven
-// Extensions to the Signal Protocol" — Defense 2.
+// VaultService provides forward-secure encrypted storage, compliant with
+// "Threat-Driven Extensions to the Signal Protocol" -- Defense 2.
 //
 // Contract:
 //   - The server NEVER sees a plaintext AES key for a vault item.
@@ -11,10 +11,35 @@ package sanchr.vault;
 //   - Vault item IDs are client-generated UUIDv4 for idempotent crash recovery.
 //   - Sharing is intentionally absent. It will return in a future round with
 //     a proper cryptographic re-wrap design.
+//
+// All RPCs require a valid Bearer token in the `authorization` metadata header.
 service VaultService {
+  // CreateVaultItem registers a new vault entry backed by an already-uploaded
+  // media object. The server stores only the encrypted metadata blob and a
+  // reference to the media object; it never sees plaintext content.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (encrypted_metadata > 64 KiB, missing media_id),
+  //   NOT_FOUND (unknown media_id), PERMISSION_DENIED (media not owned by caller).
   rpc CreateVaultItem(CreateVaultItemRequest) returns (VaultItem);
+
+  // GetVaultItems returns a paginated list of the authenticated user's vault
+  // items, ordered by creation time (newest first).
+  //
+  // Auth: Bearer token required.
   rpc GetVaultItems(GetVaultItemsRequest) returns (GetVaultItemsResponse);
+
+  // GetVaultItem returns a single vault item by its ID.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown vault_item_id), PERMISSION_DENIED (not owner).
   rpc GetVaultItem(GetVaultItemRequest) returns (VaultItem);
+
+  // DeleteVaultItem permanently removes a vault item and its associated
+  // media object from storage.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown vault_item_id), PERMISSION_DENIED (not owner).
   rpc DeleteVaultItem(DeleteVaultItemRequest) returns (DeleteVaultItemResponse);
 }
 
@@ -23,10 +48,13 @@ message CreateVaultItemRequest {
   reserved "media_type", "encrypted_url", "encrypted_key", "thumbnail_url",
            "file_name", "file_size", "sender_id", "ttl_seconds";
 
-  // Client-generated UUIDv4 for idempotent crash recovery. Server uses this as the primary key; retries with the same ID are a no-op that return the existing row.
+  // Client-generated UUIDv4 for idempotent crash recovery. Server uses this
+  // as the primary key; retries with the same ID are a no-op that return
+  // the existing row.
   string vault_item_id = 1;
 
-  // UUID of an already-uploaded media_object (via MediaService.GetUploadUrl + ConfirmUpload). The caller MUST own this media_id or the request is rejected.
+  // UUID of an already-uploaded media object (via MediaService.GetUploadUrl +
+  // ConfirmUpload). The caller MUST own this media_id or the request is rejected.
   string media_id = 2;
 
   // Opaque AES-GCM ciphertext of the metadata envelope, keyed client-side
@@ -35,20 +63,27 @@ message CreateVaultItemRequest {
   // exceeding this returns INVALID_ARGUMENT.
   bytes encrypted_metadata = 3;
 
-  // Client-computed expiry hint (Unix millis). Used by the server-side orphan sweep for lifecycle management. Not cryptographically enforced.
+  // Client-computed expiry hint (Unix millis). Used by the server-side orphan
+  // sweep for lifecycle management. Not cryptographically enforced.
   int64 expires_at = 4;
 }
 
+// VaultItem represents an encrypted file stored in the user's vault.
 message VaultItem {
   reserved 6, 7, 8, 9, 10;
   reserved "item_id", "media_type", "encrypted_url", "encrypted_key",
            "thumbnail_url", "file_name", "file_size", "sender_id";
 
+  // Client-generated UUIDv4.
   string vault_item_id = 1;
+  // Reference to the underlying media object.
   string media_id = 2;
+  // Opaque encrypted metadata blob (see CreateVaultItemRequest).
   bytes encrypted_metadata = 3;
-  int64 created_at = 4;  // Server-stamped Unix millis.
-  int64 expires_at = 5;  // Unix millis. Echoes the value from CreateVaultItemRequest.expires_at.
+  // Server-stamped Unix millis of creation time.
+  int64 created_at = 4;
+  // Unix millis. Echoes the value from CreateVaultItemRequest.expires_at.
+  int64 expires_at = 5;
 }
 
 message GetVaultItemsRequest {
@@ -63,25 +98,26 @@ message GetVaultItemsRequest {
 }
 
 message GetVaultItemsResponse {
-  // Tag 2 in the old proto was `int32 total_photos` — it is now reused for
-  // a `string next_cursor` with a different wire type. We cannot retroactively
-  // reserve tag 2 here because it is now live with different semantics; the
-  // wire-break is accepted under the "no production users" plan. Tags 3 and 4
-  // held `total_videos` and `total_files`, which are dropped entirely and ARE
-  // reserved so a future field cannot accidentally reuse them.
+  // Tag 2 in the old proto was `int32 total_photos` -- it is now reused for
+  // a `string next_cursor` with a different wire type. Tags 3 and 4 held
+  // `total_videos` and `total_files`, which are dropped and reserved.
   reserved 3, 4;
   reserved "total_photos", "total_videos", "total_files";
 
+  // Page of vault items.
   repeated VaultItem items = 1;
-  // Empty string when no more pages. Forward this value as the next request's paging_token.
+  // Empty string when no more pages. Forward this value as the next
+  // request's paging_token.
   string next_cursor = 2;
 }
 
 message GetVaultItemRequest {
+  // Client-generated UUIDv4 of the vault item.
   string vault_item_id = 1;
 }
 
 message DeleteVaultItemRequest {
+  // Client-generated UUIDv4 of the vault item to delete.
   string vault_item_id = 1;
 }
 

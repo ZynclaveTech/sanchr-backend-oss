@@ -1,70 +1,138 @@
 syntax = "proto3";
 package sanchr.backup;
 
+// BackupService manages encrypted backup lifecycle: creation, upload via
+// presigned URLs, commitment, listing, download, and deletion. Backups
+// are client-encrypted; the server stores only opaque ciphertext and
+// integrity metadata. All RPCs require a valid Bearer token in the
+// `authorization` metadata header.
 service BackupService {
+  // CreateBackupUpload initiates a new backup by generating a presigned
+  // upload URL. The client encrypts the backup locally and PUTs it to
+  // the returned URL, then calls CommitBackup to finalize.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (byte_size <= 0), RESOURCE_EXHAUSTED (quota).
   rpc CreateBackupUpload(CreateBackupUploadRequest) returns (CreateBackupUploadResponse);
+
+  // CommitBackup finalizes a backup after the client has successfully
+  // uploaded the encrypted blob. The server verifies size and hash match
+  // the values from CreateBackupUpload.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown backup_id), FAILED_PRECONDITION (size or
+  //   hash mismatch).
   rpc CommitBackup(CommitBackupRequest) returns (CommitBackupResponse);
+
+  // ListBackups returns all committed backups for the authenticated user,
+  // ordered by creation time (newest first).
+  //
+  // Auth: Bearer token required.
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+
+  // GetBackupDownload generates a presigned GET URL for downloading a
+  // specific backup blob.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown backup_id).
   rpc GetBackupDownload(GetBackupDownloadRequest) returns (GetBackupDownloadResponse);
+
+  // DeleteBackup permanently removes a backup blob and its metadata. This
+  // action is irreversible.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown backup_id).
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
 }
 
+// BackupMetadata describes a committed backup.
 message BackupMetadata {
+  // Server-assigned backup UUID.
   string backup_id = 1;
+  // Client-generated lineage identifier. All backups of the same account
+  // share a lineage_id, enabling the client to identify the backup chain.
   string lineage_id = 2;
+  // Client-defined format version for forward compatibility.
   int32 format_version = 3;
+  // Size of the encrypted backup blob in bytes.
   int64 byte_size = 4;
+  // SHA-256 hash of the encrypted blob, hex-encoded.
   string sha256_hash = 5;
+  // Client-encrypted opaque metadata blob (contents defined by client).
   bytes opaque_metadata = 6;
+  // Reserved for future forward-secrecy key rotation metadata.
   bytes reserved_forward_secrecy_metadata = 7;
+  // ISO 8601 timestamp when the backup upload was initiated.
   string created_at = 8;
+  // ISO 8601 timestamp when the backup was committed.
   string committed_at = 9;
 }
 
 message CreateBackupUploadRequest {
+  // Expected size of the encrypted backup blob in bytes.
   int64 byte_size = 1;
+  // SHA-256 hash of the encrypted blob, hex-encoded.
   string sha256_hash = 2;
+  // Client-encrypted opaque metadata.
   bytes opaque_metadata = 3;
+  // Reserved for future forward-secrecy key rotation metadata.
   bytes reserved_forward_secrecy_metadata = 4;
+  // Lineage identifier linking this backup to previous ones.
   string lineage_id = 5;
+  // Client-defined format version.
   int32 format_version = 6;
 }
 
 message CreateBackupUploadResponse {
+  // Server-assigned backup UUID.
   string backup_id = 1;
+  // Echoed lineage identifier.
   string lineage_id = 2;
+  // Presigned PUT URL for uploading the encrypted backup blob.
   string upload_url = 3;
+  // Seconds until the presigned URL expires.
   int64 expires_in = 4;
 }
 
 message CommitBackupRequest {
+  // Backup UUID from CreateBackupUploadResponse.
   string backup_id = 1;
+  // Actual byte size uploaded. Must match CreateBackupUploadRequest.byte_size.
   int64 byte_size = 2;
+  // SHA-256 hash of the uploaded blob. Must match CreateBackupUploadRequest.sha256_hash.
   string sha256_hash = 3;
 }
 
 message CommitBackupResponse {
+  // The committed backup's full metadata.
   BackupMetadata backup = 1;
 }
 
 message ListBackupsRequest {}
 
 message ListBackupsResponse {
+  // All committed backups for the user, newest first.
   repeated BackupMetadata backups = 1;
 }
 
 message GetBackupDownloadRequest {
+  // UUID of the backup to download.
   string backup_id = 1;
 }
 
 message GetBackupDownloadResponse {
+  // Backup UUID.
   string backup_id = 1;
+  // Presigned GET URL for downloading the encrypted blob.
   string download_url = 2;
+  // Seconds until the presigned URL expires.
   int64 expires_in = 3;
+  // Full backup metadata.
   BackupMetadata backup = 4;
 }
 
 message DeleteBackupRequest {
+  // UUID of the backup to delete.
   string backup_id = 1;
 }
 

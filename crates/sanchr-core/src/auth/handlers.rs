@@ -147,11 +147,6 @@ async fn resolve_user_after_otp(
 }
 
 fn verify_otp_code(state: &AppState, phone: &str, otp_code: &str) -> Result<(), AppError> {
-    if state.config.auth.dev_mode && otp_code == "999999" {
-        tracing::info!(phone = phone, "[DEV] Static OTP accepted");
-        return Ok(());
-    }
-
     let now = Utc::now().timestamp();
     otp::verify_otp(
         &state.config.auth.otp_secret,
@@ -215,7 +210,10 @@ async fn check_registration_lock(
 ) -> Result<(), AppError> {
     let row = settings::get_settings(&state.pg_pool, user_id)
         .await
-        .map_err(|e| AppError::Internal(format!("failed to load settings: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to load settings");
+            AppError::Internal("failed to load settings".into())
+        })?;
 
     if !row.registration_lock_enabled.unwrap_or(false) {
         return Ok(());
@@ -256,7 +254,18 @@ pub async fn handle_register(
     name: &str,
     password_raw: &str,
     email: Option<&str>,
+    challenge_proof: Option<(&str, &str)>, // (challenge_id, solution)
 ) -> Result<RegisterResult, AppError> {
+    // --- Challenge verification (before any other work) ---
+    if state.config.challenge.enabled {
+        let (challenge_id, solution) = challenge_proof
+            .ok_or_else(|| AppError::InvalidInput("challenge proof required".into()))?;
+        let provider = state.challenge_provider.as_ref().ok_or_else(|| {
+            AppError::Internal("challenge enabled but no provider configured".into())
+        })?;
+        provider.verify(challenge_id, solution).await?;
+    }
+
     // --- Validate inputs ---
     validate_phone(phone)?;
     validate_name(name)?;

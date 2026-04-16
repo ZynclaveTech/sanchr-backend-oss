@@ -1,0 +1,40 @@
+name: Integration Proposal
+description: Propose a new integration (KMS backend, monitoring, Helm values, etc.)
+labels: ["integration"]
+body:
+  - type: dropdown
+    id: integration_type
+    attributes:
+      label: Integration Type
+      description: What kind of integration is this?
+      options:
+        - "KMS backend"
+        - "Monitoring / observability"
+        - "Helm value addition"
+        - "CI / deployment tooling"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this integration do and why is it useful?
+    validations:
+      required: true
+  - type: textarea
+    id: external_dependencies
+    attributes:
+      label: External Dependencies
+      description: List any new crate dependencies, external services, or APIs required
+    validations:
+      required: true
+  - type: textarea
+    id: maintenance_commitment
+    attributes:
+      label: Maintenance Commitment
+      description: >
+        Who will maintain this integration long-term? Are you willing to be
+        a point of contact for issues related to this integration?
+    validations:
+      required: true

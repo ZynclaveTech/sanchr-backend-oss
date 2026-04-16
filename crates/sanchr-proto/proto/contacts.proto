@@ -1,32 +1,74 @@
 syntax = "proto3";
 package sanchr.contacts;
 
+// ContactService manages the user's contact list, including privacy-preserving
+// contact discovery, blocking, and encrypted profile fields. All RPCs require
+// a valid Bearer token in the `authorization` metadata header.
 service ContactService {
+  // SyncContacts performs privacy-preserving contact discovery. The client
+  // sends truncated SHA-256 hashes of phone numbers from the device's address
+  // book; the server returns matching registered users with their profiles.
+  //
+  // Auth: Bearer token required.
+  // Errors: INVALID_ARGUMENT (empty phone_hashes list).
   rpc SyncContacts(SyncContactsRequest) returns (SyncContactsResponse);
+
+  // GetContacts returns the authenticated user's full contact list, including
+  // blocked and favorited status.
+  //
+  // Auth: Bearer token required.
   rpc GetContacts(GetContactsRequest) returns (GetContactsResponse);
+
+  // BlockContact prevents a user from sending messages, calls, or seeing
+  // the blocker's online status. Idempotent: blocking an already-blocked
+  // contact is a no-op.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown user).
   rpc BlockContact(BlockContactRequest) returns (BlockContactResponse);
+
+  // UnblockContact reverses a previous block. Idempotent.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND (unknown user).
   rpc UnblockContact(UnblockContactRequest) returns (UnblockContactResponse);
+
+  // GetBlockedList returns the UUIDs of all users blocked by the
+  // authenticated user.
+  //
+  // Auth: Bearer token required.
   rpc GetBlockedList(GetBlockedListRequest) returns (GetBlockedListResponse);
 }
 
 message SyncContactsRequest {
+  // Truncated SHA-256 hashes of E.164 phone numbers from the device address book.
   repeated bytes phone_hashes = 1;
 }
 
 message SyncContactsResponse {
+  // Registered users whose phone hash matched the input.
   repeated MatchedContact matches = 1;
 }
 
+// MatchedContact represents a registered user discovered during contact sync.
 message MatchedContact {
+  // Server-assigned user UUID.
   string user_id      = 1;
+  // Cleartext display name (legacy). Prefer encrypted_display_name when available.
   string display_name = 2;
+  // Cleartext avatar URL (legacy). Prefer encrypted_avatar_url when available.
   string avatar_url   = 3;
+  // Cleartext status text.
   string status_text  = 4;
+  // E.164 phone number (only returned if both users have mutual contacts).
   string phone_number = 5;
-  // Encrypted profile fields
+  // AES-256-GCM profile key for decrypting encrypted profile fields.
   bytes profile_key             = 6;
+  // AES-256-GCM encrypted display name.
   bytes encrypted_display_name  = 7;
+  // AES-256-GCM encrypted bio/about text.
   bytes encrypted_bio           = 8;
+  // AES-256-GCM encrypted avatar URL.
   bytes encrypted_avatar_url    = 9;
 }
 
@@ -36,28 +78,41 @@ message GetContactsResponse {
   repeated Contact contacts = 1;
 }
 
+// Contact represents a user in the authenticated user's contact list.
 message Contact {
+  // User UUID.
   string user_id      = 1;
+  // Cleartext display name (legacy).
   string display_name = 2;
+  // Cleartext avatar URL (legacy).
   string avatar_url   = 3;
+  // Cleartext status text.
   string status_text  = 4;
+  // Whether this contact is blocked.
   bool   is_blocked   = 5;
+  // Whether this contact is marked as a favorite.
   bool   is_favorite  = 6;
+  // E.164 phone number.
   string phone_number = 7;
-  // Encrypted profile fields
+  // AES-256-GCM profile key.
   bytes profile_key             = 8;
+  // AES-256-GCM encrypted display name.
   bytes encrypted_display_name  = 9;
+  // AES-256-GCM encrypted bio/about text.
   bytes encrypted_bio           = 10;
+  // AES-256-GCM encrypted avatar URL.
   bytes encrypted_avatar_url    = 11;
 }
 
 message BlockContactRequest {
+  // UUID of the user to block.
   string contact_user_id = 1;
 }
 
 message BlockContactResponse {}
 
 message UnblockContactRequest {
+  // UUID of the user to unblock.
   string contact_user_id = 1;
 }
 
@@ -66,5 +121,6 @@ message UnblockContactResponse {}
 message GetBlockedListRequest {}
 
 message GetBlockedListResponse {
+  // UUIDs of all blocked users.
   repeated string blocked_user_ids = 1;
 }

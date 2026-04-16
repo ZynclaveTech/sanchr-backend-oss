@@ -206,7 +206,10 @@ pub async fn handle_confirm_upload(
         .key(&media.storage_key)
         .send()
         .await
-        .map_err(|e| Status::not_found(format!("object not found in S3: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "object not found in S3");
+            Status::not_found("object not found")
+        })?;
 
     if file_size != media.file_size {
         return Err(Status::invalid_argument(

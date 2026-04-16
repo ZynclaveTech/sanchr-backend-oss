@@ -82,7 +82,7 @@ pub async fn handle_sync_contacts(
             display_name: m.display_name,
             avatar_url,
             status_text: m.status_text.unwrap_or_default(),
-            phone_number: m.phone_number,
+            phone_number: String::new(), // Redacted: client already has the phone number
             profile_key: m.profile_key.unwrap_or_default(),
             encrypted_display_name: m.encrypted_display_name.unwrap_or_default(),
             encrypted_bio: m.encrypted_bio.unwrap_or_default(),
@@ -142,7 +142,7 @@ pub async fn handle_get_contacts(
             status_text: c.status_text.unwrap_or_default(),
             is_blocked: c.is_blocked.unwrap_or(false),
             is_favorite: c.is_favorite.unwrap_or(false),
-            phone_number: c.phone_number,
+            phone_number: String::new(), // Redacted: client already has the phone number
             profile_key: c.profile_key.unwrap_or_default(),
             encrypted_display_name: c.encrypted_display_name.unwrap_or_default(),
             encrypted_bio: c.encrypted_bio.unwrap_or_default(),

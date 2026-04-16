@@ -9,16 +9,47 @@ pub struct AppConfig {
     pub storage: S3Config,
     pub push: PushConfig,
     pub calling: CallingConfig,
-    #[serde(default)]
-    pub ekf: Option<EkfConfig>,
+    #[serde(default = "default_ekf_config")]
+    pub ekf: EkfConfig,
     #[serde(default)]
     pub discovery: Option<DiscoveryConfig>,
+    #[serde(default)]
+    pub challenge: ChallengeConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     pub grpc_port: u16,
     pub http_port: u16,
+    #[serde(default)]
+    pub request_size: RequestSizeConfig,
+    /// Optional bearer token for the `/metrics` endpoint. When set, requests
+    /// must include `Authorization: Bearer <token>` to access metrics.
+    #[serde(default)]
+    pub metrics_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestSizeConfig {
+    /// Global maximum request body size in bytes. Defaults to 1 MiB.
+    #[serde(default = "default_max_request_bytes")]
+    pub max_bytes: usize,
+    /// Per-RPC overrides keyed by `"ServiceName/MethodName"`.
+    #[serde(default)]
+    pub per_rpc: std::collections::HashMap<String, usize>,
+}
+
+impl Default for RequestSizeConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: default_max_request_bytes(),
+            per_rpc: std::collections::HashMap::new(),
+        }
+    }
+}
+
+fn default_max_request_bytes() -> usize {
+    1_048_576 // 1 MiB
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,6 +70,10 @@ pub struct ScyllaConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct NatsConfig {
     pub url: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -126,8 +161,20 @@ pub struct EkfConfig {
     pub tick_interval_secs: u64,
     #[serde(default = "default_ekf_grace_period")]
     pub rotation_grace_secs: u64,
-    #[serde(default)]
+    #[serde(default = "default_ekf_enabled")]
     pub enabled: bool,
+}
+
+fn default_ekf_enabled() -> bool {
+    true
+}
+
+fn default_ekf_config() -> EkfConfig {
+    EkfConfig {
+        tick_interval_secs: default_ekf_tick_interval(),
+        rotation_grace_secs: default_ekf_grace_period(),
+        enabled: true,
+    }
 }
 
 fn default_ekf_tick_interval() -> u64 {
@@ -152,6 +199,36 @@ pub struct DiscoveryConfig {
 
 fn default_oprf_rotation_interval() -> u64 {
     7 * 24 * 60 * 60 // 7 days
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChallengeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Number of leading zero bits required for the PoW hash.
+    #[serde(default = "default_pow_difficulty")]
+    pub pow_difficulty: u32,
+    /// Seconds until an issued challenge expires.
+    #[serde(default = "default_challenge_ttl")]
+    pub challenge_ttl_secs: u64,
+}
+
+impl Default for ChallengeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pow_difficulty: default_pow_difficulty(),
+            challenge_ttl_secs: default_challenge_ttl(),
+        }
+    }
+}
+
+fn default_pow_difficulty() -> u32 {
+    20
+}
+
+fn default_challenge_ttl() -> u64 {
+    300
 }
 
 impl AppConfig {
