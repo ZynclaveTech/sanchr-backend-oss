@@ -17,12 +17,19 @@ pub enum OtpError {
 
 /// Compute the time window index for a given timestamp and TTL.
 ///
-/// Returns 0 if `ttl_seconds` is 0 to avoid division by zero.
+/// Defensive against pathological inputs:
+/// - `ttl_seconds == 0` returns 0 (would otherwise divide by zero).
+/// - `ttl_seconds > i64::MAX` is clamped to `i64::MAX` (a TTL that large is
+///   nonsense in practice; wrapping it via `as i64` would produce a negative
+///   divisor and make `i64::MIN / -1` overflow).
+/// - `checked_div` guards `i64::MIN / -1` overflow on the remaining edge
+///   cases; we return 0 if the division cannot be performed.
 fn time_window(timestamp: i64, ttl_seconds: u64) -> i64 {
     if ttl_seconds == 0 {
         return 0;
     }
-    timestamp / ttl_seconds as i64
+    let divisor = ttl_seconds.min(i64::MAX as u64) as i64;
+    timestamp.checked_div(divisor).unwrap_or(0)
 }
 
 /// Generate the HMAC-SHA256 based 6-digit OTP for a specific time window.
