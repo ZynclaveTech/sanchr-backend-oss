@@ -488,8 +488,7 @@ pub async fn handle_refresh_token(
 
     let new_refresh_token = Uuid::new_v4().to_string();
     let new_hash = sha256_bytes(&new_refresh_token);
-    let new_expires_at =
-        Utc::now() + Duration::seconds(state.config.auth.refresh_token_ttl as i64);
+    let new_expires_at = Utc::now() + Duration::seconds(state.config.auth.refresh_token_ttl as i64);
 
     // --- Atomically rotate: delete old, insert new in Postgres ---
     refresh_tokens::rotate_refresh_token(
