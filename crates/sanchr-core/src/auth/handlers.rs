@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
+use fred::interfaces::KeysInterface;
+use fred::types::{Expiration, SetOptions};
 use uuid::Uuid;
 
 use sanchr_common::errors::AppError;
@@ -91,6 +93,12 @@ fn generate_otp_code(state: &AppState, phone: &str) -> Result<String, AppError> 
     .map_err(|e| AppError::Internal(e.to_string()))
 }
 
+/// Returns a redacted phone prefix safe for logging: country code + first digit
+/// only (at most 6 characters). E.g. "+1555..." → "+1555".
+fn redact_phone(phone: &str) -> &str {
+    &phone[..phone.len().min(6)]
+}
+
 /// OSS integration seam for OTP delivery.
 ///
 /// This function intentionally does not send anything. Public users are
@@ -98,7 +106,7 @@ fn generate_otp_code(state: &AppState, phone: &str) -> Result<String, AppError> 
 /// out-of-band delivery integration.
 fn send_otp_dummy(phone: &str, otp_code: &str) {
     tracing::info!(
-        phone = phone,
+        phone = redact_phone(phone),
         otp_len = otp_code.len(),
         "OTP generated; replace send_otp_dummy with your own delivery provider"
     );
@@ -113,7 +121,7 @@ fn issue_otp(state: &AppState, phone: &str, existing_user: bool) -> Result<(), A
         } else {
             "[DEV] OTP generated"
         };
-        tracing::info!(phone = phone, otp = %otp_code, "{message}");
+        tracing::info!(phone = redact_phone(phone), otp = %otp_code, "{message}");
     } else {
         send_otp_dummy(phone, &otp_code);
     }
@@ -179,11 +187,19 @@ async fn create_tokens_and_session(
 
     let refresh_token = Uuid::new_v4().to_string();
     let refresh_hash = sha256_bytes(&refresh_token);
+    let refresh_expires_at =
+        Utc::now() + Duration::seconds(state.config.auth.refresh_token_ttl as i64);
 
     // Persist refresh token hash in Postgres (authoritative store).
-    refresh_tokens::create_refresh_token(&state.pg_pool, *user_id, device_id, &refresh_hash)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    refresh_tokens::create_refresh_token(
+        &state.pg_pool,
+        *user_id,
+        device_id,
+        &refresh_hash,
+        refresh_expires_at,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Persist access session in Redis (short-lived, checked by auth middleware).
     sessions::create_session(
@@ -280,7 +296,7 @@ pub async fn handle_register(
     // the OTP flow, without revealing whether the phone already has an account.
     if users::find_by_phone(&state.pg_pool, phone).await?.is_some() {
         tracing::info!(
-            phone = phone,
+            phone = redact_phone(phone),
             "registration attempted for existing phone, generating OTP for login"
         );
         issue_otp(state, phone, true)?;
@@ -328,6 +344,39 @@ pub async fn handle_verify_otp(
 
     // --- Verify OTP ---
     verify_otp_code(state, phone, otp_code)?;
+
+    // --- OTP replay protection ---
+    // Compute the current time window index using the same divisor that
+    // verify_otp uses, then SET NX with a 2× TTL so the key outlives the
+    // current window (covering the grace-period previous window as well).
+    // SET NX returns true when the key was newly created (first redemption)
+    // and false when it already existed (replay attempt).
+    let otp_ttl = state.config.auth.otp_ttl;
+    let window_index = if otp_ttl > 0 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            / otp_ttl
+    } else {
+        0
+    };
+    let replay_key = format!("otp:used:{}:{}", phone, window_index);
+    let replay_ttl = (otp_ttl * 2) as i64;
+    let first_use: bool = state
+        .redis
+        .set::<bool, _, _>(
+            &replay_key,
+            "1",
+            Some(Expiration::EX(replay_ttl)),
+            Some(SetOptions::NX),
+            false,
+        )
+        .await
+        .unwrap_or(false);
+    if !first_use {
+        return Err(AppError::Unauthorized("OTP already used".into()));
+    }
 
     let user = resolve_user_after_otp(state, phone).await?;
 
@@ -439,6 +488,8 @@ pub async fn handle_refresh_token(
 
     let new_refresh_token = Uuid::new_v4().to_string();
     let new_hash = sha256_bytes(&new_refresh_token);
+    let new_expires_at =
+        Utc::now() + Duration::seconds(state.config.auth.refresh_token_ttl as i64);
 
     // --- Atomically rotate: delete old, insert new in Postgres ---
     refresh_tokens::rotate_refresh_token(
@@ -447,6 +498,7 @@ pub async fn handle_refresh_token(
         &new_hash,
         user_id,
         device_id,
+        new_expires_at,
     )
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -603,5 +655,17 @@ mod tests {
     #[test]
     fn validate_password_exactly_8() {
         assert!(validate_password("12345678").is_ok());
+    }
+
+    #[test]
+    fn redact_phone_long() {
+        assert_eq!(redact_phone("+15550001234"), "+15550");
+    }
+
+    #[test]
+    fn redact_phone_short() {
+        // A phone shorter than 6 chars returns the whole string (safe — invalid
+        // phone, but shouldn't panic).
+        assert_eq!(redact_phone("+1234"), "+1234");
     }
 }

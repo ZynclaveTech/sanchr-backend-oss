@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -6,9 +7,10 @@ pub struct RefreshTokenRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub device_id: i32,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub last_used_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: DateTime<Utc>,
     pub revoked: bool,
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Insert a new refresh token and return the generated row ID.
@@ -17,32 +19,35 @@ pub async fn create_refresh_token(
     user_id: Uuid,
     device_id: i32,
     token_hash: &[u8],
+    expires_at: DateTime<Utc>,
 ) -> Result<Uuid, sqlx::Error> {
     sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO refresh_tokens (user_id, device_id, token_hash)
-        VALUES ($1, $2, $3)
+        INSERT INTO refresh_tokens (user_id, device_id, token_hash, expires_at)
+        VALUES ($1, $2, $3, $4)
         RETURNING id
         "#,
     )
     .bind(user_id)
     .bind(device_id)
     .bind(token_hash)
+    .bind(expires_at)
     .fetch_one(pool)
     .await
 }
 
-/// Look up a non-revoked token by its hash.
+/// Look up a non-revoked, non-expired token by its hash.
 pub async fn validate_refresh_token(
     pool: &PgPool,
     token_hash: &[u8],
 ) -> Result<Option<RefreshTokenRow>, sqlx::Error> {
     sqlx::query_as::<_, RefreshTokenRow>(
         r#"
-        SELECT id, user_id, device_id, created_at, last_used_at, revoked
+        SELECT id, user_id, device_id, created_at, last_used_at, revoked, expires_at
         FROM refresh_tokens
         WHERE token_hash = $1
           AND revoked = false
+          AND expires_at > now()
         "#,
     )
     .bind(token_hash)
@@ -60,6 +65,7 @@ pub async fn rotate_refresh_token(
     new_token_hash: &[u8],
     user_id: Uuid,
     device_id: i32,
+    expires_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
@@ -75,13 +81,14 @@ pub async fn rotate_refresh_token(
 
     sqlx::query(
         r#"
-        INSERT INTO refresh_tokens (user_id, device_id, token_hash)
-        VALUES ($1, $2, $3)
+        INSERT INTO refresh_tokens (user_id, device_id, token_hash, expires_at)
+        VALUES ($1, $2, $3, $4)
         "#,
     )
     .bind(user_id)
     .bind(device_id)
     .bind(new_token_hash)
+    .bind(expires_at)
     .execute(&mut *tx)
     .await?;
 
