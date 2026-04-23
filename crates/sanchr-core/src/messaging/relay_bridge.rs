@@ -7,6 +7,7 @@ use tokio_stream::StreamExt;
 use sanchr_proto::messaging::{server_event, EncryptedEnvelope, SealedInboundMessage, ServerEvent};
 
 use crate::messaging::relay_payload::RelayEnvelope;
+use crate::messaging::service::envelope_kind_for;
 use crate::server::AppState;
 
 pub fn spawn_message_relay_bridge(state: Arc<AppState>) -> JoinHandle<()> {
@@ -61,6 +62,8 @@ async fn run_message_relay_bridge(state: Arc<AppState>) -> anyhow::Result<()> {
             }
         };
 
+        let envelope_kind =
+            envelope_kind_for(&relay.content_type, &relay.sender_id, relay.sender_device);
         let event = ServerEvent {
             event: Some(server_event::Event::Message(EncryptedEnvelope {
                 conversation_id: relay.conversation_id,
@@ -70,6 +73,7 @@ async fn run_message_relay_bridge(state: Arc<AppState>) -> anyhow::Result<()> {
                 ciphertext: relay.ciphertext,
                 content_type: relay.content_type,
                 server_timestamp: relay.server_timestamp,
+                envelope_kind,
             })),
         };
 

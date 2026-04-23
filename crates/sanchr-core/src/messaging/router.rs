@@ -8,6 +8,8 @@ use sanchr_common::errors::internal_status;
 use sanchr_db::redis::privacy_cache;
 use sanchr_proto::messaging::{server_event, EncryptedEnvelope, ServerEvent};
 
+use super::service::envelope_kind_for;
+
 use crate::messaging::relay_payload::RelayEnvelope;
 
 use crate::server::AppState;
@@ -116,6 +118,7 @@ pub async fn route_message(
             ciphertext: dm.ciphertext.clone(),
             content_type: content_type.to_owned(),
             server_timestamp: server_ts,
+            envelope_kind: envelope_kind_for(content_type, &sender_id.to_string(), sender_device),
         };
 
         let event = ServerEvent {

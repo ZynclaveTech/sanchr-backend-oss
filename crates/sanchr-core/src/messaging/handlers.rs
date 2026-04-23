@@ -27,6 +27,7 @@ use crate::privacy;
 use crate::server::AppState;
 
 use super::router;
+use super::service::envelope_kind_for;
 use super::stream::StreamManager;
 
 fn current_timestamp_millis() -> Result<i64, std::time::SystemTimeError> {
@@ -399,14 +400,18 @@ where
                 }
 
                 crate::observability::metrics::record_device_outbox_replayed();
+                let sender_id = row.sender_id.to_string();
+                let envelope_kind =
+                    envelope_kind_for(&row.content_type, &sender_id, row.sender_device);
                 envelopes.push(EncryptedEnvelope {
                     conversation_id: row.conversation_id.to_string(),
                     message_id: Uuid::from(row.message_id).to_string(),
-                    sender_id: row.sender_id.to_string(),
+                    sender_id,
                     sender_device: row.sender_device,
                     ciphertext: row.ciphertext,
                     content_type: row.content_type,
                     server_timestamp: row.server_ts.0,
+                    envelope_kind,
                 });
             }
 
@@ -432,14 +437,22 @@ where
 
         let envelopes: Vec<EncryptedEnvelope> = pending
             .into_iter()
-            .map(|row| EncryptedEnvelope {
-                conversation_id: row.conversation_id.to_string(),
-                message_id: Uuid::from(row.message_id).to_string(),
-                sender_id: row.sender_id.to_string(),
-                sender_device: 0, // not stored in pending table
-                ciphertext: row.ciphertext,
-                content_type: row.content_type,
-                server_timestamp: row.server_ts.0,
+            .map(|row| {
+                let sender_id = row.sender_id.to_string();
+                // sender_device=0 here matches the legacy sentinel for
+                // sealed-sender envelopes from the pending table; the
+                // helper resolves that correctly.
+                let envelope_kind = envelope_kind_for(&row.content_type, &sender_id, 0);
+                EncryptedEnvelope {
+                    conversation_id: row.conversation_id.to_string(),
+                    message_id: Uuid::from(row.message_id).to_string(),
+                    sender_id,
+                    sender_device: 0, // not stored in pending table
+                    ciphertext: row.ciphertext,
+                    content_type: row.content_type,
+                    server_timestamp: row.server_ts.0,
+                    envelope_kind,
+                }
             })
             .collect();
 

@@ -15,9 +15,9 @@ use sanchr_proto::messaging::{
     client_event, server_event, AckMessagesRequest, AckMessagesResponse, Conversation,
     DeleteConversationRequest, DeleteConversationResponse, DeleteMessageRequest,
     DeleteMessageResponse, DeliveryTokenRequest, DeliveryTokenResponse, EditMessageRequest,
-    EditMessageResponse, EncryptedEnvelope, GetConversationsRequest, GetConversationsResponse,
-    Reaction, ReceiptRequest, ReceiptResponse, SealedInboundMessage, SendMessageRequest,
-    SendMessageResponse, SendSealedMessageRequest, SendSealedMessageResponse,
+    EditMessageResponse, EncryptedEnvelope, EnvelopeKind, GetConversationsRequest,
+    GetConversationsResponse, Reaction, ReceiptRequest, ReceiptResponse, SealedInboundMessage,
+    SendMessageRequest, SendMessageResponse, SendSealedMessageRequest, SendSealedMessageResponse,
     SenderCertificateRequest, SenderCertificateResponse, ServerEvent,
     StartDirectConversationRequest, SyncRequest,
 };
@@ -31,10 +31,31 @@ use super::reaction_handler;
 use super::sealed_handler;
 use super::stream::StreamManager;
 
-const NIL_UUID_STR: &str = "00000000-0000-0000-0000-000000000000";
+pub(crate) const NIL_UUID_STR: &str = "00000000-0000-0000-0000-000000000000";
+
+/// Derives the wire-level `envelope_kind` from the legacy sentinel
+/// fields. The outbox has historically marked sealed-sender messages
+/// with `content_type == "sealed"` and/or a nil sender — this helper
+/// consolidates that heuristic so every `EncryptedEnvelope`
+/// constructor stamps the field consistently.
+///
+/// Old clients (those that did not set `envelope_kind` at all) default
+/// it to `ENVELOPE_KIND_UNSPECIFIED (0)` on the wire; we upgrade that
+/// to the concrete kind here so new clients can skip the sentinel
+/// lookup entirely.
+pub(crate) fn envelope_kind_for(content_type: &str, sender_id: &str, sender_device: i32) -> i32 {
+    let is_sealed =
+        content_type == "sealed" || (sender_id == NIL_UUID_STR && sender_device == 0);
+    if is_sealed {
+        EnvelopeKind::Sealed as i32
+    } else {
+        EnvelopeKind::Normal as i32
+    }
+}
 
 fn replay_event_from_envelope(envelope: EncryptedEnvelope) -> ServerEvent {
-    let is_sealed = envelope.content_type == "sealed"
+    let is_sealed = envelope.envelope_kind == EnvelopeKind::Sealed as i32
+        || envelope.content_type == "sealed"
         || (envelope.sender_id == NIL_UUID_STR && envelope.sender_device == 0);
 
     if is_sealed {
