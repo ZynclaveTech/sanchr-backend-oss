@@ -1,6 +1,8 @@
 syntax = "proto3";
 package sanchr.contacts;
 
+import "auth.proto";
+
 // ContactService manages the user's contact list, including privacy-preserving
 // contact discovery, blocking, and encrypted profile fields. All RPCs require
 // a valid Bearer token in the `authorization` metadata header.
@@ -38,6 +40,13 @@ service ContactService {
   //
   // Auth: Bearer token required.
   rpc GetBlockedList(GetBlockedListRequest) returns (GetBlockedListResponse);
+
+  // LookupUser returns metadata for a single registered user by E.164 phone.
+  // Returns NOT_FOUND if no registered user matches.
+  //
+  // Auth: Bearer token required.
+  // Errors: NOT_FOUND, INVALID_ARGUMENT (bad phone format).
+  rpc LookupUser(LookupUserRequest) returns (LookupUserResponse);
 }
 
 message SyncContactsRequest {
@@ -123,4 +132,14 @@ message GetBlockedListRequest {}
 message GetBlockedListResponse {
   // UUIDs of all blocked users.
   repeated string blocked_user_ids = 1;
+}
+
+message LookupUserRequest {
+  // E.164 formatted phone number.
+  string phone_number = 1;
+}
+
+message LookupUserResponse {
+  // The registered user matching the phone number.
+  sanchr.auth.User user = 1;
 }

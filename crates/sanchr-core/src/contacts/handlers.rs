@@ -8,7 +8,9 @@ use sanchr_common::errors::internal_status;
 use sanchr_db::postgres::contacts as pg_contacts;
 use sanchr_db::redis::privacy_cache::{self, PrivacyFlags};
 use sanchr_db::redis::rate_limit;
+use sanchr_proto::auth::User as ProtoUser;
 use sanchr_proto::contacts::{Contact, MatchedContact};
+use sanchr_db::postgres::users as pg_users;
 
 use crate::privacy;
 use crate::server::AppState;
@@ -187,6 +189,39 @@ pub async fn handle_unblock_contact(
     // cache self-heals on TTL expiry.
     privacy_cache::invalidate(&state.redis, &user_id).await;
     Ok(())
+}
+
+/// Look up a single registered user by E.164 phone number.
+///
+/// Returns `Status::not_found` if no active, phone-verified user matches.
+/// Returns `Status::invalid_argument` if the phone number is not E.164-ish.
+pub async fn handle_lookup_user(
+    state: &Arc<AppState>,
+    _caller_id: Uuid,
+    phone_number: &str,
+) -> Result<ProtoUser, Status> {
+    // Lightweight E.164 sanity check: must start with '+' and be at least 8 chars.
+    // Matches the validator used by auth::handlers::validate_phone.
+    if !phone_number.starts_with('+') || phone_number.len() < 8 {
+        return Err(Status::invalid_argument(
+            "phone_number must start with '+' and be at least 8 characters",
+        ));
+    }
+
+    let row = pg_users::find_by_phone(&state.pg_pool, phone_number)
+        .await
+        .map_err(|e| internal_status("lookup_user failed", e))?
+        .ok_or_else(|| Status::not_found("user not found"))?;
+
+    Ok(ProtoUser {
+        id: row.id.to_string(),
+        phone_number: row.phone_number,
+        display_name: row.display_name,
+        email: row.email.unwrap_or_default(),
+        avatar_url: row.avatar_url.unwrap_or_default(),
+        status_text: row.status_text.unwrap_or_default(),
+        created_at: row.created_at.to_rfc3339(),
+    })
 }
 
 /// Return all blocked user IDs.

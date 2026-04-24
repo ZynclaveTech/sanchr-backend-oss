@@ -6,8 +6,8 @@ use uuid::Uuid;
 use sanchr_proto::contacts::contact_service_server::ContactService;
 use sanchr_proto::contacts::{
     BlockContactRequest, BlockContactResponse, GetBlockedListRequest, GetBlockedListResponse,
-    GetContactsRequest, GetContactsResponse, SyncContactsRequest, SyncContactsResponse,
-    UnblockContactRequest, UnblockContactResponse,
+    GetContactsRequest, GetContactsResponse, LookupUserRequest, LookupUserResponse,
+    SyncContactsRequest, SyncContactsResponse, UnblockContactRequest, UnblockContactResponse,
 };
 
 use crate::middleware::auth;
@@ -81,5 +81,20 @@ impl ContactService for ContactServiceImpl {
         let blocked_user_ids = handlers::handle_get_blocked_list(&self.state, user.user_id).await?;
 
         Ok(Response::new(GetBlockedListResponse { blocked_user_ids }))
+    }
+
+    async fn lookup_user(
+        &self,
+        request: Request<LookupUserRequest>,
+    ) -> Result<Response<LookupUserResponse>, Status> {
+        let user = auth::authenticate(&self.state, &request).await?;
+        let req = request.into_inner();
+
+        let proto_user =
+            handlers::handle_lookup_user(&self.state, user.user_id, &req.phone_number).await?;
+
+        Ok(Response::new(LookupUserResponse {
+            user: Some(proto_user),
+        }))
     }
 }
