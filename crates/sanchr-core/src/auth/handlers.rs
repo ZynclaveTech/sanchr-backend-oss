@@ -456,15 +456,11 @@ pub async fn handle_verify_otp(
     // SET NX returns true when the key was newly created (first redemption)
     // and false when it already existed (replay attempt).
     let otp_ttl = state.config.auth.otp_ttl;
-    let window_index = if otp_ttl > 0 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            / otp_ttl
-    } else {
-        0
-    };
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let window_index = now_secs.checked_div(otp_ttl).unwrap_or(0);
     let replay_key = format!("otp:used:{}:{}", phone, window_index);
     let replay_ttl = (otp_ttl * 2) as i64;
     let first_use: bool = state
