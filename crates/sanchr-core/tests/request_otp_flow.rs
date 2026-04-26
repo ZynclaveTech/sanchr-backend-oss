@@ -11,7 +11,10 @@ async fn request_otp_new_phone_creates_pending_registration_with_defaults() {
         .await
         .expect("request_otp should succeed for a new phone");
 
-    assert!(!result.existing_user, "new phone must report existing_user=false");
+    assert!(
+        !result.existing_user,
+        "new phone must report existing_user=false"
+    );
     assert!(
         result.expires_in_seconds > 0,
         "expires_in_seconds must be positive"
@@ -60,7 +63,10 @@ async fn request_otp_existing_phone_returns_existing_user_true_and_does_not_modi
         .await
         .expect("request_otp should succeed for existing phone");
 
-    assert!(result.existing_user, "existing phone must report existing_user=true");
+    assert!(
+        result.existing_user,
+        "existing phone must report existing_user=true"
+    );
     assert!(result.expires_in_seconds > 0);
 
     let after = users::find_by_phone(&state.pg_pool, &phone)
@@ -160,8 +166,7 @@ async fn request_otp_rate_limited() {
 async fn request_otp_invalid_phone_format() {
     let state = common::setup_test_state().await;
 
-    let missing_plus =
-        sanchr_core::auth::handlers::handle_request_otp(&state, "15550001234").await;
+    let missing_plus = sanchr_core::auth::handlers::handle_request_otp(&state, "15550001234").await;
     assert!(missing_plus.is_err());
     let err_str = format!("{:?}", missing_plus.err().unwrap());
     assert!(
