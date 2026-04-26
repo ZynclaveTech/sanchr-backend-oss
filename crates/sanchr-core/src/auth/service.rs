@@ -6,7 +6,7 @@ use sanchr_proto::auth::auth_service_server::AuthService;
 use sanchr_proto::auth::{
     AuthResponse, DeleteAccountRequest, DeleteAccountResponse, LoginRequest, LogoutRequest,
     LogoutResponse, RefreshTokenRequest, RegisterRequest, RequestChallengeRequest,
-    RequestChallengeResponse, User, VerifyOtpRequest,
+    RequestChallengeResponse, RequestOtpRequest, RequestOtpResponse, User, VerifyOtpRequest,
 };
 
 use crate::auth::handlers::{self, AuthResult};
@@ -93,6 +93,26 @@ impl AuthService for AuthServiceImpl {
             refresh_token: String::new(),
             user,
             device_id: 0,
+        }))
+    }
+
+    async fn request_otp(
+        &self,
+        request: Request<RequestOtpRequest>,
+    ) -> Result<Response<RequestOtpResponse>, Status> {
+        // `device` is accepted in the request for forward-compat with future
+        // signals (e.g. surfacing the platform to the SMS provider) but is
+        // intentionally unused today -- device binding still happens at
+        // VerifyOTP time, where credentials are minted.
+        let req = request.into_inner();
+
+        let result = handlers::handle_request_otp(&self.state, &req.phone_number)
+            .await
+            .map_err(Status::from)?;
+
+        Ok(Response::new(RequestOtpResponse {
+            expires_in_seconds: result.expires_in_seconds,
+            existing_user: result.existing_user,
         }))
     }
 

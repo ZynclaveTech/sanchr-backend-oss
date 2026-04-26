@@ -23,6 +23,14 @@ pub struct RegisterResult {
     pub user: Option<users::UserRow>,
 }
 
+pub struct RequestOtpResult {
+    /// Seconds until the issued OTP expires (mirrors `auth.otp_ttl`).
+    pub expires_in_seconds: i64,
+    /// True if the phone is already a verified user (OTP issued for login),
+    /// false if a fresh `pending_registrations` row was created/refreshed.
+    pub existing_user: bool,
+}
+
 pub struct AuthResult {
     pub access_token: String,
     pub refresh_token: String,
@@ -80,6 +88,31 @@ fn password_hasher_config(state: &AppState) -> PasswordHasherConfig {
         iterations: state.config.auth.argon2_iterations,
         parallelism: state.config.auth.argon2_parallelism,
     }
+}
+
+/// Default placeholder for `pending_registrations.display_name` when a
+/// caller (e.g. `RequestOtp`) does not supply one. The column is `NOT NULL`,
+/// and clients filter this exact literal during onboarding so it never
+/// surfaces in the UI -- the real name is captured via `UpdateProfile` after
+/// OTP verification.
+const DEFAULT_PENDING_DISPLAY_NAME: &str = "Sanchr User";
+
+/// Generate a cryptographically random ASCII password and Argon2-hash it.
+/// Used to satisfy the `NOT NULL` `password_hash` column on
+/// `pending_registrations` for OTP-only signups where no user-supplied
+/// password exists. The plaintext is discarded immediately; the user can
+/// only ever authenticate via OTP, never via password.
+fn generate_random_password_hash(state: &AppState) -> Result<String, AppError> {
+    use rand::Rng;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    // Hex encoding keeps the input ASCII-safe for the password hasher.
+    let secret = bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let cfg = password_hasher_config(state);
+    password::hash_password(&secret, &cfg).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 fn generate_otp_code(state: &AppState, phone: &str) -> Result<String, AppError> {
@@ -325,6 +358,77 @@ pub async fn handle_register(
     crate::observability::metrics::record_auth_event("register");
 
     Ok(RegisterResult { user: None })
+}
+
+/// Phone-only OTP issuance.
+///
+/// Lean entry point for clients that do not yet have a display name or
+/// password -- both are collected after OTP verification (display name via
+/// `UpdateProfile` during onboarding; password is never used because
+/// authentication is OTP-driven).
+///
+/// Behaviour:
+/// - For an already-verified phone: issue an OTP and return
+///   `existing_user = true`. The verified `users` row is **never** mutated.
+/// - For a new phone: upsert a `pending_registrations` row with server-side
+///   defaults (`display_name = "Sanchr User"`, random Argon2 password hash)
+///   so the existing OTP-verify path can promote it into `users`.
+///
+/// Shares the same 5-attempt / 15-minute per-phone rate limit as
+/// `handle_register` (key namespace `rate:register:`) so this RPC cannot be
+/// used to bypass abuse controls on the legacy path.
+pub async fn handle_request_otp(
+    state: &Arc<AppState>,
+    phone: &str,
+) -> Result<RequestOtpResult, AppError> {
+    // --- Validate inputs ---
+    validate_phone(phone)?;
+
+    // --- Rate limit (shared key with handle_register) ---
+    let rate_key = format!("rate:register:{}", phone);
+    rate_limit::check_rate_limit(&state.redis, &rate_key, 5, 900).await?;
+
+    let otp_ttl = state.config.auth.otp_ttl as i64;
+
+    // --- Existing verified user? Issue OTP for login, do NOT touch the row. ---
+    if users::find_by_phone(&state.pg_pool, phone).await?.is_some() {
+        tracing::info!(
+            phone = redact_phone(phone),
+            "request_otp for existing phone, issuing login OTP"
+        );
+        issue_otp(state, phone, true)?;
+        crate::observability::metrics::record_auth_event("request_otp");
+        return Ok(RequestOtpResult {
+            expires_in_seconds: otp_ttl,
+            existing_user: true,
+        });
+    }
+
+    // --- New phone: stage a pending registration with server defaults. ---
+    // Both `display_name` and `password_hash` are NOT NULL on the table; the
+    // display name placeholder is filtered client-side after OTP verify and
+    // overwritten by `UpdateProfile`, and the password hash is never used
+    // because the user authenticates exclusively via OTP.
+    let password_hash = generate_random_password_hash(state)?;
+    let expires_at = Utc::now() + Duration::seconds(otp_ttl);
+    pending_registrations::upsert_pending_registration(
+        &state.pg_pool,
+        phone,
+        DEFAULT_PENDING_DISPLAY_NAME,
+        None,
+        &password_hash,
+        expires_at,
+    )
+    .await?;
+
+    issue_otp(state, phone, false)?;
+
+    crate::observability::metrics::record_auth_event("request_otp");
+
+    Ok(RequestOtpResult {
+        expires_in_seconds: otp_ttl,
+        existing_user: false,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
