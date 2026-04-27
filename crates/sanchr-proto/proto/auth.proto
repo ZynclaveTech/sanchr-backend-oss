@@ -2,9 +2,9 @@ syntax = "proto3";
 package sanchr.auth;
 
 // AuthService handles user registration, OTP verification, authentication,
-// and account lifecycle management. All RPCs except Register, VerifyOTP, and
-// RequestChallenge require a valid Bearer token in the `authorization`
-// metadata header.
+// and account lifecycle management. All RPCs except Register, RequestOtp,
+// VerifyOTP, and RequestChallenge require a valid Bearer token in the
+// `authorization` metadata header.
 service AuthService {
   // Register initiates account creation. Issues an OTP to the provided phone
   // number. If the server has challenge enforcement enabled, a valid
@@ -15,6 +15,19 @@ service AuthService {
   // Errors: INVALID_ARGUMENT (bad phone format), RESOURCE_EXHAUSTED (rate
   //   limited), ALREADY_EXISTS (phone already registered).
   rpc Register(RegisterRequest) returns (AuthResponse);
+
+  // RequestOtp issues an OTP for a phone number without requiring a display
+  // name or password up front. For new phones, a pending registration is
+  // staged with server-side defaults; for already-verified phones, the OTP
+  // is issued for login and the existing user row is left untouched.
+  //
+  // Shares the per-phone rate-limit bucket with Register.
+  //
+  // Rate limit: 5 requests per 15 minutes per phone number.
+  // Auth: none required.
+  // Errors: INVALID_ARGUMENT (bad phone format), RESOURCE_EXHAUSTED (rate
+  //   limited).
+  rpc RequestOtp(RequestOtpRequest) returns (RequestOtpResponse);
 
   // VerifyOTP completes registration by validating the one-time password sent
   // to the user's phone. On success, returns access and refresh tokens.
@@ -93,6 +106,28 @@ message RegisterRequest {
   DeviceInfo device = 5;
   // Proof-of-work solution if challenge enforcement is active.
   ChallengeProof challenge_proof = 6;
+}
+
+// RequestOtpRequest asks the server to issue an OTP for a phone number with
+// no other client-supplied profile data. The OTP can be used to either
+// complete a new-phone registration (server seeds a pending row with
+// placeholder display name and a random password hash) or to log in an
+// already-verified user.
+message RequestOtpRequest {
+  // E.164 formatted phone number.
+  string phone_number = 1;
+  // Device metadata; accepted for forward-compat (e.g. routing SMS by
+  // platform) but device binding still happens at VerifyOTP time.
+  DeviceInfo device = 2;
+}
+
+// RequestOtpResponse describes what the server did with the request.
+message RequestOtpResponse {
+  // Seconds until the issued OTP expires (mirrors `auth.otp_ttl`).
+  int64 expires_in_seconds = 1;
+  // True if the phone is already a verified user (the OTP was issued for
+  // login); false if a pending registration was created or refreshed.
+  bool existing_user = 2;
 }
 
 // Challenge system for abuse detection.

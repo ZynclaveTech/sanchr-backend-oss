@@ -6,11 +6,11 @@ use uuid::Uuid;
 
 use sanchr_common::errors::internal_status;
 use sanchr_db::postgres::contacts as pg_contacts;
+use sanchr_db::postgres::users as pg_users;
 use sanchr_db::redis::privacy_cache::{self, PrivacyFlags};
 use sanchr_db::redis::rate_limit;
 use sanchr_proto::auth::User as ProtoUser;
 use sanchr_proto::contacts::{Contact, MatchedContact};
-use sanchr_db::postgres::users as pg_users;
 
 use crate::privacy;
 use crate::server::AppState;

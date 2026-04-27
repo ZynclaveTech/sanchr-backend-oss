@@ -87,9 +87,11 @@ pub trait CryptoProvider: Send + Sync {
         identity_key: &[u8],
     ) -> Result<(Vec<u8>, u64), CryptoProviderError>;
 
-    /// Return the 32-byte Ed25519 public key used for sealed-sender
-    /// certificate verification.
-    async fn sealed_sender_public_key(&self) -> Result<[u8; 32], CryptoProviderError>;
+    /// Return the 33-byte type-prefixed Curve25519 public key (`[0x05, ...32B...]`)
+    /// suitable for embedding as the libsignal sealed-sender trust root in
+    /// client builds (Android `BuildConfig.SEALED_SENDER_TRUST_ROOT`,
+    /// iOS `SealedSenderManager.serverTrustRootBytes`).
+    async fn sealed_sender_public_key(&self) -> Result<Vec<u8>, CryptoProviderError>;
 
     // ── TURN ─────────────────────────────────────────────────────────────
 

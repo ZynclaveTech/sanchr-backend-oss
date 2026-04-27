@@ -29,6 +29,8 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 subtle = "2"
 ed25519-dalek = { workspace = true }
+curve25519-dalek = { workspace = true }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 sanchr-proto = { path = "../sanchr-proto" }
 prost = { workspace = true }
 async-trait = { workspace = true }
@@ -40,3 +42,13 @@ criterion = { workspace = true }
 [[bench]]
 name = "crypto_benchmarks"
 harness = false
+
+# Ops CLI: derive the sealed-sender trust-root pubkey from a 32-byte seed
+# without a full server boot. Self-hosters who pin a stable signing key
+# use this to bake the matching trust root into their client builds.
+#
+#   echo -n "$SANCHR_SEALED_SENDER_KEY_B64" | \
+#     cargo run -p sanchr-server-crypto --bin print-trust-root
+[[bin]]
+name = "print-trust-root"
+path = "src/bin/print_trust_root.rs"
