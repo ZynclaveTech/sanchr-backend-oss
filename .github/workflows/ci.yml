@@ -14,22 +14,39 @@ jobs:
     name: Lint & Unit
     uses: ./.github/workflows/rust-lint-unit-reusable.yml
 
-  reliability_guards:
-    name: Reliability Guards
-    needs: lint_and_unit
-    uses: ./.github/workflows/rust-integration-reusable.yml
-    with:
-      test_command: make reliability-guards
+  # NOTE: integration runs `cargo test --workspace --tests` which already
+  # picks up `tests/reliability_guards.rs`. The previous `reliability_guards`
+  # job here was a redundant pre-flight that paid for the same Postgres /
+  # Scylla / NATS / MinIO stack twice per CI run. If we ever want a
+  # fail-fast gate ahead of the full integration suite, gate it on a
+  # narrower cargo-test invocation that doesn't need the full stack.
 
   fuzz_smoke:
     name: Fuzz Smoke Test
     needs: lint_and_unit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: arduino/setup-protoc@v3
-      - run: cargo install cargo-fuzz
+
+      # Cache cargo-fuzz install + the nightly fuzz target dir. Without this,
+      # every CI run reinstalls cargo-fuzz (~90 s) and recompiles all four
+      # harnesses from scratch (~60 s) on top of recompiling the workspace.
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            fuzz/target/
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-fuzz
+        run: command -v cargo-fuzz || cargo install cargo-fuzz
       - run: cargo +nightly fuzz build
       - run: |
           cargo +nightly fuzz run fuzz_proto_decode -- -max_total_time=30

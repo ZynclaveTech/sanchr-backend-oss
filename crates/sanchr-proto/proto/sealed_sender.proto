@@ -1,42 +1,26 @@
 syntax = "proto3";
 package sanchr.sealed_sender;
 
-// ServerCertificate attests the server's signing key. Used to validate
-// SenderCertificate signatures in the sealed-sender protocol.
 message ServerCertificate {
-  // Inner certificate containing the server's key material.
   message Certificate {
-    // Server key identifier.
     uint32 id = 1;
-    // Server's public signing key.
     bytes key = 2;
   }
-  // Serialized Certificate protobuf.
   bytes certificate = 1;
-  // Ed25519 signature over the certificate bytes, produced by the server's
-  // long-term signing key.
   bytes signature = 2;
 }
 
-// SenderCertificate is a short-lived, server-signed attestation of a user's
-// identity. Embedded inside sealed-sender envelopes to let the recipient
-// verify the sender without the server learning sender identity.
 message SenderCertificate {
-  // Inner certificate containing the sender's identity claims.
   message Certificate {
-    // Sender's user UUID.
-    string sender_uuid = 1;
-    // Sender's numeric device identifier.
-    uint32 sender_device_id = 3;
-    // Unix timestamp (seconds) when this certificate expires.
-    fixed64 expires = 4;
-    // Sender's Curve25519 identity public key.
-    bytes identity_key = 5;
-    // The server certificate that signed this sender certificate.
-    ServerCertificate signer = 6;
+    // Field 1 reserved for libsignal's deprecated `sender` (E164) string.
+    reserved 1;
+    reserved "sender";
+    uint32 sender_device = 2;
+    fixed64 expires = 3;
+    bytes identity_key = 4;
+    ServerCertificate signer = 5;
+    string sender_uuid = 6;
   }
-  // Serialized Certificate protobuf.
   bytes certificate = 1;
-  // Ed25519 signature over the certificate bytes, produced by the server.
   bytes signature = 2;
 }

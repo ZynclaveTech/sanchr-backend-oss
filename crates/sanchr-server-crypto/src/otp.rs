@@ -79,7 +79,11 @@ pub fn verify_otp(
     let current_window = time_window(current_timestamp, ttl_seconds);
     let mut found = 0u8;
 
-    for window in [current_window, current_window - 1] {
+    // `wrapping_sub` defends against `current_window == i64::MIN` (overflow on
+    // plain `- 1`). The window value is only ever fed into HMAC as bytes via
+    // `to_be_bytes`, so wrapping is semantically harmless — it just produces a
+    // distinct HMAC bucket that no real client would ever land on.
+    for window in [current_window, current_window.wrapping_sub(1)] {
         let expected =
             compute_otp(secret, phone, window).map_err(|_| OtpError::VerificationError)?;
         found |= expected.as_bytes().ct_eq(otp.as_bytes()).unwrap_u8();

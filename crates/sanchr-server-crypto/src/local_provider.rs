@@ -102,8 +102,8 @@ impl CryptoProvider for LocalCryptoProvider {
             .map_err(|e| CryptoProviderError::SealedSender(e.to_string()))
     }
 
-    async fn sealed_sender_public_key(&self) -> Result<[u8; 32], CryptoProviderError> {
-        Ok(self.sealed_sender.public_key_bytes())
+    async fn sealed_sender_public_key(&self) -> Result<Vec<u8>, CryptoProviderError> {
+        Ok(self.sealed_sender.trust_root_public_key_bytes())
     }
 
     // ── TURN ─────────────────────────────────────────────────────────────

@@ -217,11 +217,12 @@ impl CryptoProvider for VaultCryptoProvider {
         ))
     }
 
-    async fn sealed_sender_public_key(&self) -> Result<[u8; 32], CryptoProviderError> {
+    async fn sealed_sender_public_key(&self) -> Result<Vec<u8>, CryptoProviderError> {
         // Real implementation:
         // GET /v1/<transit_mount>/keys/<signing_key_name>
         // Extract the public key from the latest key version and convert
-        // from PEM/DER to the 32-byte format expected by clients.
+        // from PEM/DER to the 33-byte type-prefixed Curve25519 format
+        // clients expect.
         Err(CryptoProviderError::Internal(
             "Vault not yet implemented: sealed_sender_public_key".into(),
         ))

@@ -113,6 +113,10 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
                 "019_conversation_device_notification_prefs.sql",
                 include_str!("../migrations/019_conversation_device_notification_prefs.sql"),
             ),
+            (
+                "020_refresh_token_expiry.sql",
+                include_str!("../migrations/020_refresh_token_expiry.sql"),
+            ),
         ];
 
         for (name, sql) in migrations {

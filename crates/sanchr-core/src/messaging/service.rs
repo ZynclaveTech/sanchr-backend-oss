@@ -44,8 +44,7 @@ pub(crate) const NIL_UUID_STR: &str = "00000000-0000-0000-0000-000000000000";
 /// to the concrete kind here so new clients can skip the sentinel
 /// lookup entirely.
 pub(crate) fn envelope_kind_for(content_type: &str, sender_id: &str, sender_device: i32) -> i32 {
-    let is_sealed =
-        content_type == "sealed" || (sender_id == NIL_UUID_STR && sender_device == 0);
+    let is_sealed = content_type == "sealed" || (sender_id == NIL_UUID_STR && sender_device == 0);
     if is_sealed {
         EnvelopeKind::Sealed as i32
     } else {

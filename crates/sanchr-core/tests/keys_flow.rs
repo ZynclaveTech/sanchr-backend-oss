@@ -94,16 +94,17 @@ async fn get_user_devices_only_returns_complete_sendable_devices() {
     )
     .await;
 
-    sanchr_core::auth::handlers::handle_verify_otp(
+    // Add a second device for the same user. Pre-OTP-replay-protection (28e654e
+    // "feat: implement OTP replay protection ...") this test re-called
+    // handle_verify_otp with a freshly-generated OTP. Replay protection now
+    // (correctly) blocks a second VerifyOtp for the same phone in the same
+    // time window with "OTP already used", so we go through the password
+    // login path — which is the actual production flow for adding a second
+    // device once the user is registered.
+    sanchr_core::auth::handlers::handle_login(
         &state,
         &phone,
-        &sanchr_server_crypto::otp::generate_otp(
-            &state.config.auth.otp_secret,
-            &phone,
-            chrono::Utc::now().timestamp(),
-            state.config.auth.otp_ttl,
-        )
-        .expect("otp generation should succeed"),
+        "Password123!",
         Some("device-b"),
         "ios",
         Some(&format!("install-{}", uuid::Uuid::new_v4())),
@@ -111,7 +112,7 @@ async fn get_user_devices_only_returns_complete_sendable_devices() {
         "",
     )
     .await
-    .expect("second device registration should succeed");
+    .expect("second device login should succeed");
 
     let before = sanchr_core::keys::handlers::handle_get_user_devices(&state, auth.user.id)
         .await

@@ -10,6 +10,9 @@ jobs:
   run:
     name: Lint & Unit
     runs-on: ubuntu-latest
+    # Hard cap so a hung clippy or test doesn't burn the GHA-default 6-hour
+    # budget per concurrent run. Real wall-clock here is ~6 minutes.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

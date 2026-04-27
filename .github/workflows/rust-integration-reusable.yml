@@ -14,6 +14,11 @@ env:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # Scylla in 512 MiB on a GH free runner is the #1 source of integration
+    # flakes (slow startup, occasional NATS leader-election deadlocks). 30 min
+    # is well above the ~12 min real wall-clock and keeps a single hung run
+    # from burning the GHA-default 6-hour budget.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
