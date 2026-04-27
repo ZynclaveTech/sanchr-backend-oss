@@ -171,11 +171,11 @@ impl CryptoProvider for AwsKmsCryptoProvider {
         ))
     }
 
-    async fn sealed_sender_public_key(&self) -> Result<[u8; 32], CryptoProviderError> {
+    async fn sealed_sender_public_key(&self) -> Result<Vec<u8>, CryptoProviderError> {
         // Real implementation: call kms:GetPublicKey on `signing_key_arn`
         // and cache the result. Note: KMS ECC keys return a DER-encoded
-        // public key, which must be converted to the 32-byte format
-        // expected by clients.
+        // public key, which must be converted to the 33-byte
+        // type-prefixed Curve25519 format clients expect.
         Err(CryptoProviderError::Internal(
             "AWS KMS not yet implemented: sealed_sender_public_key".into(),
         ))

@@ -440,7 +440,22 @@ fn build_sealed_sender_signer(config: &AppConfig) -> anyhow::Result<Arc<SealedSe
     tracing::warn!(
         "sealed-sender signer initialized with ephemeral dev key because auth.dev_mode=true"
     );
-    Ok(Arc::new(SealedSenderSigner::generate(1)))
+    let signer = Arc::new(SealedSenderSigner::generate(1));
+
+    // Self-hosters need this pubkey to bake into their client builds (the
+    // Android `BuildConfig.SEALED_SENDER_TRUST_ROOT` and the iOS
+    // `SealedSenderManager.serverTrustRootBytes` constant). With the dev-mode
+    // ephemeral key it changes every boot — useful only as a sanity check
+    // that the server side is alive. Self-hosters who pin a stable signing
+    // key should swap `generate(1)` for `from_seed(&seed, 1)` and run the
+    // `print-trust-root` CLI against their seed to get the value to bake.
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let trust_root_b64 = STANDARD.encode(signer.trust_root_public_key_bytes());
+    tracing::info!(
+        trust_root_pubkey = %trust_root_b64,
+        "sealed-sender trust-root pubkey (bake into client builds)"
+    );
+    Ok(signer)
 }
 
 fn spawn_background_tasks(state: Arc<AppState>) -> Vec<JoinHandle<()>> {
